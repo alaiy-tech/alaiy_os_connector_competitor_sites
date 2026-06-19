@@ -47,7 +47,7 @@ def start_scrape_run(sites):
 
 
 @frappe.whitelist(allow_guest=True)
-def receive_scrape_results(scrape_run_id, site_name, products, status="complete"):
+def receive_scrape_results(scrape_run_id, products):
     if isinstance(products, str):
         products = frappe.parse_json(products)
 
@@ -59,18 +59,19 @@ def receive_scrape_results(scrape_run_id, site_name, products, status="complete"
         frappe.get_doc({
             "doctype": "Product",
             "scrape_id": scrape_run_id,
-            "source_site": site_name,
+            "source_site": p.get("source_site"),
             "product_name": p.get("product_name"),
             "product_image_url": p.get("product_image_url"),
             "product_source_url": p.get("product_source_url"),
             "sku": p.get("sku"),
+            "categories": p.get("category"),
             "saved_at": frappe.utils.now(),
             "review_status": "Pending",
         }).insert(ignore_permissions=True)
         products_added += 1
 
     run = frappe.get_doc("Scrape Run", scrape_run_id)
-    run.status = "Complete" if status == "complete" else "Failed"
+    run.status = "Complete"
     run.completed_at = frappe.utils.now()
     run.products_added = (run.products_added or 0) + products_added
     run.save(ignore_permissions=True)

@@ -65,6 +65,7 @@ def receive_scrape_results(scrape_run_id, products):
             "product_source_url": p.get("product_source_url"),
             "sku": p.get("sku"),
             "categories": p.get("category"),
+            "scraped_price": p.get("price"),
             "saved_at": frappe.utils.now(),
             "review_status": "Pending",
         }).insert(ignore_permissions=True)

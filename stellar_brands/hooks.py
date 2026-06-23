@@ -249,9 +249,6 @@ app_license = "mit"
 
 
 fixtures = [
-    "Scraping Source",
-    "Scrape Run",
-    "Product",
-    "Submission",
-    "Buyer"
+    "Competitor Site",
+    "Scraped Product"
 ]

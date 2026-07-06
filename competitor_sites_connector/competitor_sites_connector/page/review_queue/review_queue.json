@@ -1,0 +1,10 @@
+{
+ "doctype": "Page",
+ "module": "Competitor Sites Connector",
+ "name": "review-queue",
+ "page_name": "review-queue",
+ "standard": "Yes",
+ "title": "Review Queue",
+ "icon": "clipboard-check",
+ "roles": []
+}

@@ -1,0 +1,11 @@
+/* Scoped to the competitor_products connector card only */
+.alaiy-connector-card[data-connector-id="competitor_products"] .sb-connector-action-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 0;
+}
+
+.alaiy-connector-card[data-connector-id="competitor_products"] .sb-connector-action-btn {
+	min-width: 110px;
+}

@@ -1,0 +1,10 @@
+{
+ "doctype": "Page",
+ "module": "Competitor Sites Connector",
+ "name": "website-manager",
+ "page_name": "website-manager",
+ "standard": "Yes",
+ "title": "Website Manager",
+ "icon": "monitor",
+ "roles": []
+}

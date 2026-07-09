@@ -6,7 +6,7 @@ connector_meta = {
     "description": "Competitor product site scraper powered by Firecrawl",
     "icon": "search",
     "settings_doctype": "Stellar Brands Connector Settings",
-    "test_method": "competitor_sites_connector.api.test_connection.test_connection",
+    "test_method": "alaiy_os_connector_competitor_sites.api.test_connection.test_connection",
     "sync_categories_method": None,
     "sync_items_method": None,
     "is_enabled": 0,

@@ -1,5 +1,5 @@
-app_name = "competitor_sites_connector"
-app_title = "Competitor Sites Connector"
+app_name = "alaiy_os_connector_competitor_sites"
+app_title = "Alaiy OS Connector Competitor Sites"
 app_publisher = "Alaiy"
 app_description = "Jewelry Feeder Platform"
 app_email = "amit@alaiy.com"
@@ -7,21 +7,21 @@ app_license = "mit"
 
 _V = "20260706a"
 app_include_js = [
-    f"/assets/competitor_sites_connector/js/connector_card.js?v={_V}",
-    f"/assets/competitor_sites_connector/js/website_manager.js?v={_V}",
-    f"/assets/competitor_sites_connector/js/scrape_runner.js?v={_V}",
-    f"/assets/competitor_sites_connector/js/review_queue.js?v={_V}",
-    f"/assets/competitor_sites_connector/js/pricing.js?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/js/connector_card.js?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/js/website_manager.js?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/js/scrape_runner.js?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/js/review_queue.js?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/js/pricing.js?v={_V}",
 ]
 app_include_css = [
-    f"/assets/competitor_sites_connector/css/connector_card.css?v={_V}",
-    f"/assets/competitor_sites_connector/css/website_manager.css?v={_V}",
-    f"/assets/competitor_sites_connector/css/scrape_runner.css?v={_V}",
-    f"/assets/competitor_sites_connector/css/review_queue.css?v={_V}",
-    f"/assets/competitor_sites_connector/css/pricing.css?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/css/connector_card.css?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/css/website_manager.css?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/css/scrape_runner.css?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/css/review_queue.css?v={_V}",
+    f"/assets/alaiy_os_connector_competitor_sites/css/pricing.css?v={_V}",
 ]
 
-after_install = "competitor_sites_connector.setup.install.after_install"
+after_install = "alaiy_os_connector_competitor_sites.setup.install.after_install"
 
 # Apps
 # ------------------
@@ -32,10 +32,10 @@ after_install = "competitor_sites_connector.setup.install.after_install"
 # add_to_apps_screen = [
 # 	{
 # 		"name": "stellar_brands",
-# 		"logo": "/assets/competitor_sites_connector/logo.png",
+# 		"logo": "/assets/alaiy_os_connector_competitor_sites/logo.png",
 # 		"title": "Stellar Brands",
 # 		"route": "/stellar_brands",
-# 		"has_permission": "competitor_sites_connector.api.permission.has_app_permission"
+# 		"has_permission": "alaiy_os_connector_competitor_sites.api.permission.has_app_permission"
 # 	}
 # ]
 
@@ -43,12 +43,12 @@ after_install = "competitor_sites_connector.setup.install.after_install"
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/competitor_sites_connector/css/stellar_brands.css"
-# app_include_js = "/assets/competitor_sites_connector/js/stellar_brands.js"
+# app_include_css = "/assets/alaiy_os_connector_competitor_sites/css/stellar_brands.css"
+# app_include_js = "/assets/alaiy_os_connector_competitor_sites/js/stellar_brands.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/competitor_sites_connector/css/stellar_brands.css"
-# web_include_js = "/assets/competitor_sites_connector/js/stellar_brands.js"
+# web_include_css = "/assets/alaiy_os_connector_competitor_sites/css/stellar_brands.css"
+# web_include_js = "/assets/alaiy_os_connector_competitor_sites/js/stellar_brands.js"
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "stellar_brands/public/scss/website"
@@ -266,4 +266,5 @@ after_install = "competitor_sites_connector.setup.install.after_install"
 # ignore_translatable_strings_from = []
 
 
-after_migrate = ["competitor_sites_connector.setup.install.sync_connector_registry", "competitor_sites_connector.setup.install.after_migrate"]
+after_migrate = ["alaiy_os_connector_competitor_sites.setup.install.sync_connector_registry",
+                 "alaiy_os_connector_competitor_sites.setup.install.after_migrate"]

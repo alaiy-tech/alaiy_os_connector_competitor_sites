@@ -1,0 +1,41 @@
+{
+  "creation": "2026-06-23 00:00:00.000000",
+  "docstatus": 0,
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["sb_firecrawl_api_key"],
+  "fields": [
+    {
+      "description": "Firecrawl API key. Replaces frappe.conf.firecrawl_api_key.",
+      "fieldname": "sb_firecrawl_api_key",
+      "fieldtype": "Password",
+      "label": "Firecrawl API Key"
+    }
+  ],
+  "is_single": 1,
+  "links": [],
+  "modified": "2026-06-23 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Alaiy OS Connector Competitor Sites",
+  "name": "Stellar Brands Connector Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 0
+}

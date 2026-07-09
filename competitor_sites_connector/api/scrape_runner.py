@@ -2,7 +2,7 @@ import uuid
 
 import frappe
 
-from competitor_sites_connector.api.utils.scrape_utils import _save_products, _scrape_single_url
+from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _save_products, _scrape_single_url
 
 
 @frappe.whitelist()
@@ -12,7 +12,7 @@ def scrape_from_site(site_name):
     scrape_id = str(uuid.uuid4())
 
     frappe.enqueue(
-        "competitor_sites_connector.api.utils.scrape_utils._bg_scrape_site",
+        "alaiy_os_connector_competitor_sites.api.utils.scrape_utils._bg_scrape_site",
         site_name=site_name,
         site_url=site.site_url,
         scrape_id=scrape_id,
@@ -40,7 +40,8 @@ def scrape_selected_sites(sites=None, product_limit=500):
     if sites:
         site_names = _json.loads(sites) if isinstance(sites, str) else sites
     else:
-        site_names = [s["name"] for s in frappe.get_all("Competitor Site", fields=["name"])]
+        site_names = [s["name"]
+                      for s in frappe.get_all("Competitor Site", fields=["name"])]
 
     if not site_names:
         return {"message": "No competitor sites configured", "scrape_id": None}
@@ -49,7 +50,7 @@ def scrape_selected_sites(sites=None, product_limit=500):
     for name in site_names:
         site = frappe.get_doc("Competitor Site", name)
         frappe.enqueue(
-            "competitor_sites_connector.api.utils.scrape_utils._bg_scrape_site",
+            "alaiy_os_connector_competitor_sites.api.utils.scrape_utils._bg_scrape_site",
             site_name=name,
             site_url=site.site_url,
             scrape_id=scrape_id,
@@ -75,7 +76,8 @@ def get_scrape_progress(scrape_id):
         as_dict=True,
     )
 
-    done_sites = frappe.cache().get_value(f"scrape_done:{scrape_id}", use_local_cache=False) or {}
+    done_sites = frappe.cache().get_value(
+        f"scrape_done:{scrape_id}", use_local_cache=False) or {}
 
     errors = frappe.db.sql(
         """

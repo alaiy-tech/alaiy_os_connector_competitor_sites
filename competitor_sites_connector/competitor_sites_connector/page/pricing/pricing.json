@@ -1,9 +1,9 @@
 {
- "doctype": "Page",
- "module": "Competitor Sites Connector",
- "name": "pricing",
- "page_name": "pricing",
- "standard": "Yes",
- "title": "Pricing",
- "roles": []
+  "doctype": "Page",
+  "module": "Alaiy OS Connector Competitor Sites",
+  "name": "pricing",
+  "page_name": "pricing",
+  "standard": "Yes",
+  "title": "Pricing",
+  "roles": []
 }

@@ -1,5 +1,5 @@
 [project]
-name = "competitor_sites_connector"
+name = "alaiy_os_connector_competitor_sites"
 authors = [
     { name = "Alaiy", email = "amit@alaiy.com"}
 ]

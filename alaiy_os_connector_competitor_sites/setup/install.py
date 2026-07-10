@@ -69,7 +69,7 @@ def after_migrate():
 
 def _update_alaiy_os_sidebar():
     try:
-        from alaiy_os_core.setup.install import create_or_update_workspace_sidebar
+        from alaiy_os.setup.install import create_or_update_workspace_sidebar
         create_or_update_workspace_sidebar()
         frappe.db.commit()
         _inject_sidebar()

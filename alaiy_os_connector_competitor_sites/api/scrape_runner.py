@@ -40,8 +40,7 @@ def scrape_selected_sites(sites=None, product_limit=500):
     if sites:
         site_names = _json.loads(sites) if isinstance(sites, str) else sites
     else:
-        site_names = [s["name"]
-                      for s in frappe.get_all("Competitor Site", fields=["name"])]
+        site_names = [s["name"] for s in frappe.get_all("Competitor Site", fields=["name"])]
 
     if not site_names:
         return {"message": "No competitor sites configured", "scrape_id": None}
@@ -76,8 +75,7 @@ def get_scrape_progress(scrape_id):
         as_dict=True,
     )
 
-    done_sites = frappe.cache().get_value(
-        f"scrape_done:{scrape_id}", use_local_cache=False) or {}
+    done_sites = frappe.cache().get_value(f"scrape_done:{scrape_id}", use_local_cache=False) or {}
 
     errors = frappe.db.sql(
         """

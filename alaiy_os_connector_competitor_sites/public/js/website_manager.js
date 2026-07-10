@@ -67,8 +67,7 @@
 			},
 			error: (err) => {
 				const tbody = root.querySelector(".sb-wm-tbody");
-				if (tbody)
-					tbody.innerHTML = `<tr><td colspan="8" class="sb-wm-empty" style="color:red">Failed to load sites.</td></tr>`;
+				if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="sb-wm-empty" style="color:red">Failed to load sites.</td></tr>`;
 				console.error("[WebsiteManager]", err);
 			},
 		});
@@ -76,11 +75,8 @@
 
 	function _rowHtml(s) {
 		const cats = (s.categories || "")
-			.split(",")
-			.map((c) => c.trim())
-			.filter(Boolean)
-			.map((c) => `<span class="sb-wm-tag">${_esc(c)}</span>`)
-			.join("");
+			.split(",").map((c) => c.trim()).filter(Boolean)
+			.map((c) => `<span class="sb-wm-tag">${_esc(c)}</span>`).join("");
 		const lastScraped = s.last_scraped
 			? frappe.datetime.str_to_user(s.last_scraped)
 			: '<span class="sb-wm-never">Never</span>';
@@ -129,14 +125,12 @@
 							args: { site_name: siteName },
 							callback: () => _loadSites(root),
 						});
-					},
+					}
 				);
 			});
 		});
 		root.querySelector(".sb-wm-check-all").addEventListener("change", function () {
-			root.querySelectorAll(".sb-wm-row-check").forEach((c) => {
-				c.checked = this.checked;
-			});
+			root.querySelectorAll(".sb-wm-row-check").forEach((c) => { c.checked = this.checked; });
 		});
 	}
 
@@ -152,10 +146,7 @@
 			const site_name = get("site_name");
 			const site_url = get("site_url");
 			const categories = get("categories");
-			if (!site_name || !site_url) {
-				frappe.msgprint(__("Site name and URL are required."));
-				return;
-			}
+			if (!site_name || !site_url) { frappe.msgprint(__("Site name and URL are required.")); return; }
 			frappe.call({
 				method: "alaiy_os_connector_competitor_sites.api.competitor_site.add_site",
 				args: { site_name, site_url, categories },
@@ -170,10 +161,6 @@
 	}
 
 	function _esc(str) {
-		return (str || "")
-			.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;")
-			.replace(/"/g, "&quot;");
+		return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 	}
 })();

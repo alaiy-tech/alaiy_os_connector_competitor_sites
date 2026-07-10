@@ -1,130 +1,130 @@
 {
-  "actions": [],
-  "autoname": "field:id",
-  "creation": "2026-06-22 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "id",
-    "scrape_id",
-    "product_name",
-    "product_image_url",
-    "source_product_url",
-    "source_site",
-    "source_site_url",
-    "sku",
-    "categories",
-    "source_price",
-    "description",
-    "scraped_at",
-    "review_status",
-    "notes"
-  ],
-  "fields": [
-    {
-      "fieldname": "id",
-      "fieldtype": "Data",
-      "label": "ID",
-      "reqd": 1,
-      "unique": 1
-    },
-    {
-      "fieldname": "scrape_id",
-      "fieldtype": "Data",
-      "label": "Scrape ID"
-    },
-    {
-      "fieldname": "product_name",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Product Name"
-    },
-    {
-      "fieldname": "product_image_url",
-      "fieldtype": "Data",
-      "label": "Product Image URL"
-    },
-    {
-      "fieldname": "source_product_url",
-      "fieldtype": "Data",
-      "label": "Source Product URL",
-      "unique": 1
-    },
-    {
-      "fieldname": "source_site",
-      "fieldtype": "Link",
-      "label": "Source Site",
-      "options": "Competitor Site"
-    },
-    {
-      "fieldname": "source_site_url",
-      "fieldtype": "Data",
-      "label": "Source Site URL"
-    },
-    {
-      "fieldname": "sku",
-      "fieldtype": "Data",
-      "label": "SKU"
-    },
-    {
-      "fieldname": "categories",
-      "fieldtype": "Data",
-      "label": "Categories"
-    },
-    {
-      "fieldname": "source_price",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Source Price"
-    },
-    {
-      "fieldname": "description",
-      "fieldtype": "Small Text",
-      "label": "Description"
-    },
-    {
-      "fieldname": "scraped_at",
-      "fieldtype": "Datetime",
-      "label": "Scraped At"
-    },
-    {
-      "default": "Pending",
-      "fieldname": "review_status",
-      "fieldtype": "Select",
-      "in_list_view": 1,
-      "label": "Review Status",
-      "options": "Pending\nKept\nSkipped"
-    },
-    {
-      "fieldname": "notes",
-      "fieldtype": "Small Text",
-      "label": "Notes"
-    }
-  ],
-  "links": [],
-  "modified": "2026-06-26 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Alaiy OS Connector Competitor Sites",
-  "name": "Scraped Product",
-  "naming_rule": "By fieldname",
-  "owner": "Administrator",
-  "permissions": [
-    {
-      "create": 1,
-      "delete": 1,
-      "email": 1,
-      "export": 1,
-      "print": 1,
-      "read": 1,
-      "report": 1,
-      "role": "System Manager",
-      "share": 1,
-      "write": 1
-    }
-  ],
-  "sort_field": "scraped_at",
-  "sort_order": "DESC",
-  "states": [],
-  "title_field": "product_name",
-  "track_changes": 0
+ "actions": [],
+ "autoname": "field:id",
+ "creation": "2026-06-22 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "id",
+  "scrape_id",
+  "product_name",
+  "product_image_url",
+  "source_product_url",
+  "source_site",
+  "source_site_url",
+  "sku",
+  "categories",
+  "source_price",
+  "description",
+  "scraped_at",
+  "review_status",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "id",
+   "fieldtype": "Data",
+   "label": "ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "scrape_id",
+   "fieldtype": "Data",
+   "label": "Scrape ID"
+  },
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Product Name"
+  },
+  {
+   "fieldname": "product_image_url",
+   "fieldtype": "Data",
+   "label": "Product Image URL"
+  },
+  {
+   "fieldname": "source_product_url",
+   "fieldtype": "Data",
+   "label": "Source Product URL",
+   "unique": 1
+  },
+  {
+   "fieldname": "source_site",
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "Competitor Site"
+  },
+  {
+   "fieldname": "source_site_url",
+   "fieldtype": "Data",
+   "label": "Source Site URL"
+  },
+  {
+   "fieldname": "sku",
+   "fieldtype": "Data",
+   "label": "SKU"
+  },
+  {
+   "fieldname": "categories",
+   "fieldtype": "Data",
+   "label": "Categories"
+  },
+  {
+   "fieldname": "source_price",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Source Price"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "scraped_at",
+   "fieldtype": "Datetime",
+   "label": "Scraped At"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "review_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Review Status",
+   "options": "Pending\nKept\nSkipped"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alaiy OS Connector Competitor Sites",
+ "name": "Scraped Product",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "scraped_at",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "product_name",
+ "track_changes": 0
 }

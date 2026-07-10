@@ -10,8 +10,7 @@ def _get_firecrawl():
     settings = frappe.get_single("Stellar Brands Connector Settings")
     api_key = settings.get_password("sb_firecrawl_api_key")
     if not api_key:
-        frappe.throw(
-            "Firecrawl API key is not set in Stellar Brands Connector Settings")
+        frappe.throw("Firecrawl API key is not set in Stellar Brands Connector Settings")
     return FirecrawlApp(api_key=api_key)
 
 
@@ -53,8 +52,7 @@ def _save_products(raw_products, site_name, scrape_id):
             }).insert(ignore_permissions=True)
             saved += 1
         except Exception as e:
-            frappe.log_error(
-                f"Failed to save product {source_url}: {e}", "Scraper")
+            frappe.log_error(f"Failed to save product {source_url}: {e}", "Scraper")
 
     frappe.db.commit()
     return saved
@@ -119,8 +117,7 @@ def _bg_scrape_site(site_name, site_url, scrape_id, scrape_method="Auto", produc
                 method_used = "Firecrawl"
 
         saved = _save_products(products, site_name, scrape_id)
-        frappe.logger().info(
-            f"Scrape {scrape_id}: {saved} products saved from {site_name} via {method_used}")
+        frappe.logger().info(f"Scrape {scrape_id}: {saved} products saved from {site_name} via {method_used}")
         _mark_site_done(scrape_id, site_name, saved)
     except Exception as e:
         frappe.log_error(f"Scrape failed for {site_name}: {e}", "Scraper")

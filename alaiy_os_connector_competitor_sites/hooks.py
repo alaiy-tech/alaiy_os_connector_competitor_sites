@@ -5,7 +5,7 @@ app_description = "Jewelry Feeder Platform"
 app_email = "amit@alaiy.com"
 app_license = "mit"
 
-_V = "20260706a"
+_V = "20260709b"
 app_include_js = [
     f"/assets/alaiy_os_connector_competitor_sites/js/connector_card.js?v={_V}",
     f"/assets/alaiy_os_connector_competitor_sites/js/website_manager.js?v={_V}",
@@ -266,5 +266,4 @@ after_install = "alaiy_os_connector_competitor_sites.setup.install.after_install
 # ignore_translatable_strings_from = []
 
 
-after_migrate = ["alaiy_os_connector_competitor_sites.setup.install.sync_connector_registry",
-                 "alaiy_os_connector_competitor_sites.setup.install.after_migrate"]
+after_migrate = ["alaiy_os_connector_competitor_sites.setup.install.sync_connector_registry", "alaiy_os_connector_competitor_sites.setup.install.after_migrate"]

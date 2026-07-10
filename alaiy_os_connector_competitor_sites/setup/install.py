@@ -9,8 +9,7 @@ def sync_connector_registry():
 
     # Remove old registry row from before the rename
     if frappe.db.exists("OS Connector Registry", "stellar_brands"):
-        frappe.delete_doc("OS Connector Registry",
-                          "stellar_brands", ignore_permissions=True)
+        frappe.delete_doc("OS Connector Registry", "stellar_brands", ignore_permissions=True)
         frappe.db.commit()
 
     from alaiy_os_connector_competitor_sites.connector_meta import connector_meta
@@ -45,26 +44,19 @@ def _fix_settings_as_single():
     frappe.db.commit()
 
 
+
 _SIDEBAR_NAME = "OS"
 _SECTION_LABEL = "Competitor Sites"
 _SIDEBAR_ITEMS = [
-    {"type": "Section Break", "label": _SECTION_LABEL,
-        "icon": "globe",           "child": 0, "indent": 1},
-    {"type": "Link", "link_type": "Page", "link_to": "website-manager",
-        "label": "Website Manager", "child": 1, "icon": "monitor",        "indent": 1},
-    {"type": "Link", "link_type": "Page", "link_to": "scrape-runner",
-        "label": "Scrape Runner",   "child": 1, "icon": "play",            "indent": 1},
-    {"type": "Link", "link_type": "Page", "link_to": "review-queue",
-        "label": "Review Queue",    "child": 1, "icon": "clipboard-check", "indent": 1},
-    {"type": "Link", "link_type": "Page", "link_to": "pricing",
-        "label": "Pricing",         "child": 1, "icon": "tag",             "indent": 1},
-    {"type": "Section Break", "label": "Logs",
-        "icon": "activity",        "child": 0, "indent": 1},
-    {"type": "Link", "link_type": "Report", "link_to": "Competitor Product Logs",
-        "label": "Scrape Logs", "child": 1, "icon": "activity", "indent": 1},
+    {"type": "Section Break", "label": _SECTION_LABEL,   "icon": "globe",           "child": 0, "indent": 1},
+    {"type": "Link", "link_type": "Page", "link_to": "website-manager", "label": "Website Manager", "child": 1, "icon": "monitor",        "indent": 1},
+    {"type": "Link", "link_type": "Page", "link_to": "scrape-runner",   "label": "Scrape Runner",   "child": 1, "icon": "play",            "indent": 1},
+    {"type": "Link", "link_type": "Page", "link_to": "review-queue",    "label": "Review Queue",    "child": 1, "icon": "clipboard-check", "indent": 1},
+    {"type": "Link", "link_type": "Page", "link_to": "pricing",         "label": "Pricing",         "child": 1, "icon": "tag",             "indent": 1},
+    {"type": "Section Break", "label": "Logs",           "icon": "activity",        "child": 0, "indent": 1},
+    {"type": "Link", "link_type": "Report", "link_to": "Competitor Product Logs", "label": "Scrape Logs", "child": 1, "icon": "activity", "indent": 1},
 ]
-_INJECTED_LABELS = {_SECTION_LABEL, "Website Manager",
-                    "Scrape Runner", "Review Queue", "Pricing", "Logs", "Scrape Logs"}
+_INJECTED_LABELS = {_SECTION_LABEL, "Website Manager", "Scrape Runner", "Review Queue", "Pricing", "Logs", "Scrape Logs"}
 
 
 def after_install():

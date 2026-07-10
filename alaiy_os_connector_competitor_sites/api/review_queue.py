@@ -137,6 +137,15 @@ def finalize_selected(collection_name, names=None):
         created.append(name)
 
     collection.insert(ignore_permissions=True)
+
+    if created:
+        frappe.db.sql(
+            "UPDATE `tabScraped Product` SET review_status='Finalized' WHERE name IN ({})".format(
+                ",".join(["%s"] * len(created))
+            ),
+            created,
+        )
+
     frappe.db.commit()
 
     return {"collection": collection_name, "count": len(created)}

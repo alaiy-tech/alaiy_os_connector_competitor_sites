@@ -126,6 +126,28 @@
   background: var(--control-bg);
 }
 
+/* Card hover actions */
+.rq-card-actions {
+  display: none;
+  flex-direction: row;
+  border-top: 1px solid var(--border-color);
+}
+.rq-card:hover .rq-card-actions { display: flex; }
+.rq-card-btn {
+  flex: 1;
+  border: none;
+  border-right: 1px solid var(--border-color);
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.rq-card-btn:last-child { border-right: none; }
+.rq-card-btn-skip:hover { background: #fde8ea; color: #c82333; }
+.rq-card-btn-keep:hover { background: #e6f4ea; color: #1e8c3c; }
 
 /* Card body */
 .rq-card-body { padding: 10px 12px 12px; }

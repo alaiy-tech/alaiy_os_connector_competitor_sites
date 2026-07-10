@@ -36,12 +36,40 @@ def get_collection_items(collection_name):
     return items
 
 
+def _fetch_image(url):
+    if not url:
+        return None, None
+    try:
+        import io, requests
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None, None
+        content_type = r.headers.get("content-type", "")
+        buf = io.BytesIO(r.content)
+        if "webp" in content_type:
+            try:
+                from PIL import Image
+                img = Image.open(buf).convert("RGBA")
+                out = io.BytesIO()
+                img.save(out, format="PNG")
+                out.seek(0)
+                return out, "png"
+            except Exception:
+                return None, None
+        ext = "png" if "png" in content_type else "gif" if "gif" in content_type else "jpeg"
+        buf.seek(0)
+        return buf, ext
+    except Exception:
+        return None, None
+
+
 @frappe.whitelist()
 def generate_factory_excel(collection_name):
     import io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
+    from openpyxl.drawing.image import Image as XLImage
 
     items = get_collection_items(collection_name)
 
@@ -57,8 +85,8 @@ def generate_factory_excel(collection_name):
     thin = Side(style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    headers = ["#", "Style Number", "Product Name", "Description", "Image URL", "Product URL"]
-    col_widths = [5, 22, 30, 50, 40, 40]
+    headers = ["#", "Style Number", "Product Name", "Description", "Image", "Product URL"]
+    col_widths = [5, 22, 30, 50, 18, 40]
 
     for col, (header, width) in enumerate(zip(headers, col_widths), 1):
         cell = ws.cell(row=1, column=col, value=header)
@@ -70,6 +98,8 @@ def generate_factory_excel(collection_name):
 
     ws.row_dimensions[1].height = 30
 
+    IMG_ROW_HEIGHT = 90
+
     for idx, item in enumerate(items, 1):
         row = idx + 1
         values = [
@@ -77,14 +107,30 @@ def generate_factory_excel(collection_name):
             item.get("item") or "",
             item.get("item_name") or "",
             item.get("description") or "",
-            item.get("image") or "",
+            "",  # image cell — filled below
             item.get("product_url") or "",
         ]
         for col, val in enumerate(values, 1):
             cell = ws.cell(row=row, column=col, value=val)
             cell.alignment = center if col == 1 else left
             cell.border = border
-        ws.row_dimensions[row].height = 20
+        ws.row_dimensions[row].height = IMG_ROW_HEIGHT
+
+        img_url = item.get("image") or ""
+        buf, ext = _fetch_image(img_url)
+        if buf:
+            try:
+                xl_img = XLImage(buf)
+                # Scale to fit row height (~90pt ≈ 120px at 96dpi)
+                scale = 120 / max(xl_img.height, 1)
+                xl_img.height = 120
+                xl_img.width = int(xl_img.width * scale)
+                col_letter = get_column_letter(5)
+                ws.add_image(xl_img, f"{col_letter}{row}")
+            except Exception:
+                ws.cell(row=row, column=5, value=img_url)
+        elif img_url:
+            ws.cell(row=row, column=5, value=img_url)
 
     buffer = io.BytesIO()
     wb.save(buffer)

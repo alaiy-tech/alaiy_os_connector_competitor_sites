@@ -58,10 +58,7 @@
 
 	function _siteItemHtml(s) {
 		const cats = (s.categories || "")
-			.split(",")
-			.map((c) => c.trim())
-			.filter(Boolean)
-			.join(" · ");
+			.split(",").map((c) => c.trim()).filter(Boolean).join(" · ");
 		const lastScraped = s.last_scraped
 			? `Last scraped ${frappe.datetime.prettyDate(s.last_scraped)}`
 			: "Never scraped";
@@ -99,9 +96,7 @@
 		root.querySelector(".sb-sr-select-all").addEventListener("click", (e) => {
 			e.preventDefault();
 			const all = root.querySelectorAll(".sb-sr-site-item:not([style*='none'])");
-			const anyUnchecked = [...all].some(
-				(i) => !i.querySelector(".sb-sr-check-input").checked,
-			);
+			const anyUnchecked = [...all].some((i) => !i.querySelector(".sb-sr-check-input").checked);
 			all.forEach((item) => {
 				item.querySelector(".sb-sr-check-input").checked = anyUnchecked;
 				item.classList.toggle("sb-sr-checked", anyUnchecked);
@@ -125,18 +120,14 @@
 		panel.innerHTML = `
 <div class="sb-sr-progress-header">Scraping ${sites.length} site${sites.length !== 1 ? "s" : ""}…</div>
 <div class="sb-sr-site-cards">
-  ${sites
-		.map(
-			(s) => `
+  ${sites.map((s) => `
   <div class="sb-sr-site-card" data-site="${_esc(s)}">
     <div class="sb-sr-card-left">
       <div class="sb-sr-card-name">${_esc(s)}</div>
       <div class="sb-sr-card-sub">Starting…</div>
     </div>
     <div class="sb-sr-card-badge sb-sr-badge-pending">Pending</div>
-  </div>`,
-		)
-		.join("")}
+  </div>`).join("")}
 </div>`;
 	}
 
@@ -184,9 +175,8 @@ ${site_cards}`;
 	// ── Run ───────────────────────────────────────────────────────────────────
 
 	function _runScrape(root) {
-		const selected = [...root.querySelectorAll(".sb-sr-check-input:checked")].map(
-			(i) => i.closest(".sb-sr-site-item").dataset.name,
-		);
+		const selected = [...root.querySelectorAll(".sb-sr-check-input:checked")]
+			.map((i) => i.closest(".sb-sr-site-item").dataset.name);
 		const limit = parseInt(root.querySelector(".sb-sr-limit-select").value) || 0;
 
 		const btn = root.querySelector(".sb-sr-run-btn");
@@ -258,10 +248,7 @@ ${site_cards}`;
 
 				const allDone = sites.every((s) => doneSites[s]);
 				if (!allDone) {
-					setTimeout(
-						() => _pollProgress(root, btn, scrape_id, sites, seen, start),
-						3000,
-					);
+					setTimeout(() => _pollProgress(root, btn, scrape_id, sites, seen, start), 3000);
 				} else {
 					const total = siteRows.reduce((s, r) => s + r.count, 0);
 					const hasErrors = sites.some((s) => doneSites[s] && doneSites[s].error);

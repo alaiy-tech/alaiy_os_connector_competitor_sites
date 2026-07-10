@@ -1,10 +1,10 @@
 {
-  "doctype": "Page",
-  "module": "Alaiy OS Connector Competitor Sites",
-  "name": "review-queue",
-  "page_name": "review-queue",
-  "standard": "Yes",
-  "title": "Review Queue",
-  "icon": "clipboard-check",
-  "roles": []
+ "doctype": "Page",
+ "module": "Alaiy OS Connector Competitor Sites",
+ "name": "review-queue",
+ "page_name": "review-queue",
+ "standard": "Yes",
+ "title": "Review Queue",
+ "icon": "clipboard-check",
+ "roles": []
 }

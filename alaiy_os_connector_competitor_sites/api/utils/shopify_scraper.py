@@ -1,12 +1,6 @@
 import re
 import frappe
 
-JEWELRY_KEYWORDS = {
-    "jewelry", "jewellery", "jewel", "accessory", "accessories",
-    "earring", "necklace", "bracelet", "bangle", "ring", "pendant",
-    "anklet", "brooch", "chain", "choker", "cuff", "stud", "hoop",
-}
-
 
 def _strip_html(html):
     if not html:
@@ -21,29 +15,15 @@ def _base_url(site_url):
 
 
 def _collection_handle(site_url):
-    """Extract /collections/{handle} from the site URL if present."""
     from urllib.parse import urlparse
     path = urlparse(site_url).path
     m = re.search(r"/collections/([^/?#]+)", path)
     return m.group(1) if m else None
 
 
-def _is_jewelry(product):
-    """Return True if product_type or tags contain any jewelry keyword."""
-    text = " ".join([
-        (product.get("product_type") or ""),
-        " ".join(product.get("tags") or []),
-        (product.get("title") or ""),
-    ]).lower()
-    return any(kw in text for kw in JEWELRY_KEYWORDS)
-
-
-
 def _parse_link_header(header):
-    """Extract the 'next' cursor URL from Shopify's Link response header."""
     if not header:
         return None
-    import re
     for part in header.split(","):
         url_match = re.search(r'<([^>]+)>', part)
         rel_match = re.search(r'rel="([^"]+)"', part)
@@ -52,29 +32,18 @@ def _parse_link_header(header):
     return None
 
 
-def _scrape_shopify(site_url, product_limit=500):
-    import requests
-    base = _base_url(site_url)
-    handle = _collection_handle(site_url)
-
-    if handle:
-        endpoint = f"{base}/collections/{handle}/products.json?limit=250"
-        filter_by_keyword = False
-    else:
-        endpoint = f"{base}/products.json?limit=250"
-        filter_by_keyword = True
-
+def _fetch_products(session, endpoint, product_limit):
+    """Paginate a Shopify products.json endpoint and return all products up to limit."""
     products = []
     next_url = endpoint
-    session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0"})
-
     while next_url:
         try:
             r = session.get(next_url, timeout=20)
             if r.status_code != 200:
                 break
             batch = r.json().get("products", [])
+        except ValueError:
+            break
         except Exception as e:
             frappe.log_error(f"Shopify fetch failed: {e}", "Scraper")
             break
@@ -83,15 +52,12 @@ def _scrape_shopify(site_url, product_limit=500):
             break
 
         for p in batch:
-            if filter_by_keyword and not _is_jewelry(p):
-                continue
-
             image = (p.get("images") or [{}])[0].get("src", "")
             if not image:
                 continue
-
             variant = (p.get("variants") or [{}])[0]
             handle_val = p.get("handle", "")
+            base = endpoint.split("/collections/")[0].split("/products")[0]
             products.append({
                 "product_name": p.get("title", ""),
                 "product_image_url": image,
@@ -101,10 +67,37 @@ def _scrape_shopify(site_url, product_limit=500):
                 "description": _strip_html(p.get("body_html", "")),
                 "category": p.get("product_type", ""),
             })
-
             if product_limit and len(products) >= product_limit:
                 return products
 
         next_url = _parse_link_header(r.headers.get("Link"))
+    return products
+
+
+def _scrape_shopify(site_url, product_limit=500):
+    import requests
+    base = _base_url(site_url)
+    handle = _collection_handle(site_url)
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": "Mozilla/5.0"})
+
+    if handle:
+        # Try the specific collection first
+        products = _fetch_products(session, f"{base}/collections/{handle}/products.json?limit=250", product_limit)
+        # If the collection returned very few, also pull from root to get more
+        if len(products) < min(product_limit, 20):
+            frappe.logger().info(f"Collection '{handle}' only has {len(products)} products, pulling from root products.json too")
+            root_products = _fetch_products(session, f"{base}/products.json?limit=250", product_limit)
+            # merge, dedupe by product_source_url
+            seen = {p["product_source_url"] for p in products}
+            for p in root_products:
+                if p["product_source_url"] not in seen:
+                    products.append(p)
+                    seen.add(p["product_source_url"])
+                    if product_limit and len(products) >= product_limit:
+                        break
+    else:
+        products = _fetch_products(session, f"{base}/products.json?limit=250", product_limit)
 
     return products

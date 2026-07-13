@@ -155,13 +155,11 @@ after_install = "alaiy_os_connector_competitor_sites.setup.install.after_install
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Workspace Sidebar": {
+		"on_update": "alaiy_os_connector_competitor_sites.setup.install._on_sidebar_update",
+	}
+}
 
 # Scheduled Tasks
 # ---------------

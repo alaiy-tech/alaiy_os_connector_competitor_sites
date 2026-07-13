@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "autoname": "format:SL-{YYYY}-{MM}-{DD}-{######}",
+ "creation": "2026-07-13 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "site_name",
+  "site_url",
+  "scrape_id",
+  "status",
+  "method_used",
+  "product_limit",
+  "urls_found",
+  "already_in_db",
+  "products_saved",
+  "started_at",
+  "completed_at",
+  "log"
+ ],
+ "fields": [
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site"
+  },
+  {
+   "fieldname": "site_url",
+   "fieldtype": "Data",
+   "label": "Site URL"
+  },
+  {
+   "fieldname": "scrape_id",
+   "fieldtype": "Data",
+   "label": "Scrape Batch ID"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Queued\nRunning\nDone\nFailed"
+  },
+  {
+   "fieldname": "method_used",
+   "fieldtype": "Data",
+   "label": "Method Used"
+  },
+  {
+   "fieldname": "product_limit",
+   "fieldtype": "Int",
+   "label": "Product Limit"
+  },
+  {
+   "fieldname": "urls_found",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "URLs Found"
+  },
+  {
+   "fieldname": "already_in_db",
+   "fieldtype": "Int",
+   "label": "Already in DB"
+  },
+  {
+   "fieldname": "products_saved",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Products Saved"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "fieldname": "log",
+   "fieldtype": "Long Text",
+   "label": "Log"
+  }
+ ],
+ "modified": "2026-07-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alaiy OS Connector Competitor Sites",
+ "name": "Scrape Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

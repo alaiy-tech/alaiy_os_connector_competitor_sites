@@ -2,6 +2,43 @@
 	window._sb_sr_html = _srHtml;
 	window._sb_sr_load = _loadSites;
 	window._sb_sr_bind_events = _bindEvents;
+	window._sb_sr_restore_state = _restoreState;
+
+	const STORAGE_KEY = "sb_scrape_active_v2";
+	const POLL_MS = 3000;
+
+	// ── State (localStorage) ─────────────────────────────────────────────────
+
+	function _saveState(log_names, startedAt) {
+		// log_names: {site_name: log_doc_name}
+		localStorage.setItem(STORAGE_KEY, JSON.stringify({ log_names, startedAt }));
+	}
+
+	function _clearState() {
+		localStorage.removeItem(STORAGE_KEY);
+		// also wipe the old v1 key so it doesn't interfere
+		localStorage.removeItem("sb_scrape_active");
+	}
+
+	function _restoreState(root) {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (!raw) return false;
+		let state;
+		try { state = JSON.parse(raw); } catch (e) { _clearState(); return false; }
+		const { log_names, startedAt } = state;
+		if (!log_names || !Object.keys(log_names).length) { _clearState(); return false; }
+
+		const sites = Object.keys(log_names);
+		_showProgress(root, sites);
+		const btn = root.querySelector(".sb-sr-run-btn");
+		btn.disabled = true;
+		btn.textContent = "Running…";
+
+		_pollProgress(root, btn, log_names, startedAt || Date.now());
+		return true;
+	}
+
+	// ── HTML ──────────────────────────────────────────────────────────────────
 
 	function _srHtml() {
 		return `
@@ -22,9 +59,11 @@
     <div class="sb-sr-limit-wrap">
       <label class="sb-sr-limit-label">Products to fetch</label>
       <select class="sb-sr-limit-select">
-        <option value="100">100</option>
+        <option value="10">10</option>
+        <option value="25">25</option>
+        <option value="100" selected>100</option>
         <option value="250">250</option>
-        <option value="500" selected>500</option>
+        <option value="500">500</option>
         <option value="1000">1,000</option>
         <option value="0">All</option>
       </select>
@@ -43,6 +82,8 @@
   </div>
 </div>`;
 	}
+
+	// ── Site list ─────────────────────────────────────────────────────────────
 
 	function _loadSites(root) {
 		frappe.call({
@@ -113,7 +154,7 @@
 		root.querySelector(".sb-sr-run-btn").disabled = n === 0;
 	}
 
-	// ── Progress panel ────────────────────────────────────────────────────────
+	// ── Progress cards ────────────────────────────────────────────────────────
 
 	function _showProgress(root, sites) {
 		const panel = root.querySelector(".sb-sr-status-panel");
@@ -124,43 +165,72 @@
   <div class="sb-sr-site-card" data-site="${_esc(s)}">
     <div class="sb-sr-card-left">
       <div class="sb-sr-card-name">${_esc(s)}</div>
-      <div class="sb-sr-card-sub">Starting…</div>
+      <div class="sb-sr-card-sub">Queued…</div>
     </div>
-    <div class="sb-sr-card-badge sb-sr-badge-pending">Pending</div>
+    <div class="sb-sr-card-badge sb-sr-badge-pending">Queued</div>
   </div>`).join("")}
 </div>`;
 	}
 
-	function _updateSiteCard(root, site, count, done, error) {
+	function _updateSiteCard(root, site, info) {
 		const card = root.querySelector(`.sb-sr-site-card[data-site="${_esc(site)}"]`);
 		if (!card) return;
 		const sub = card.querySelector(".sb-sr-card-sub");
 		const badge = card.querySelector(".sb-sr-card-badge");
-		if (error) {
-			sub.textContent = "Could not reach site";
-			badge.textContent = "Issue";
+		const { status, products_saved = 0, already_in_db = 0, urls_found = 0, log } = info;
+
+		if (status === "Failed") {
+			// Show the friendly error message directly on the card
+			const errorText = log || "Unknown error";
+			const isCredits = errorText.toLowerCase().includes("credits");
+			sub.innerHTML = `<span class="sb-sr-card-error">${_esc(errorText)}</span>`;
+			badge.textContent = isCredits ? "No Credits" : "Failed";
 			badge.className = "sb-sr-card-badge sb-sr-badge-error";
-		} else if (done) {
-			sub.textContent = `${count} product${count !== 1 ? "s" : ""} found`;
+
+		} else if (status === "Done") {
+			if (already_in_db > 0 && products_saved === 0) {
+				sub.textContent = `${already_in_db} already in DB — all up to date`;
+			} else if (already_in_db > 0) {
+				sub.textContent = `${products_saved} new · ${already_in_db} already saved`;
+			} else {
+				sub.textContent = `${products_saved} new product${products_saved !== 1 ? "s" : ""} saved`;
+			}
 			badge.textContent = "Done";
 			badge.className = "sb-sr-card-badge sb-sr-badge-done";
-		} else {
-			sub.textContent = `${count} products so far…`;
+
+		} else if (status === "Running") {
+			if (!card._startedAt) card._startedAt = Date.now();
+			const elapsed = Math.round((Date.now() - card._startedAt) / 1000);
+			const timeStr = elapsed > 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
+			sub.textContent = urls_found
+				? `${urls_found} URLs found, ${products_saved} saved… (${timeStr})`
+				: `Mapping site… (${timeStr})`;
 			badge.textContent = "Running";
 			badge.className = "sb-sr-card-badge sb-sr-badge-running";
+
+		} else {
+			// Queued
+			sub.textContent = "Waiting in queue…";
+			badge.textContent = "Queued";
+			badge.className = "sb-sr-card-badge sb-sr-badge-pending";
 		}
 	}
 
-	function _showComplete(root, total, siteCount, hasErrors) {
+	function _showComplete(root, log_names, results) {
+		_clearState();
 		const panel = root.querySelector(".sb-sr-status-panel");
 		const site_cards = panel.querySelector(".sb-sr-site-cards")?.outerHTML || "";
+		const sites = Object.keys(log_names);
+		const total = sites.reduce((sum, s) => sum + (results[s]?.products_saved || 0), 0);
+		const hasErrors = sites.some((s) => results[s]?.status === "Failed");
+
 		panel.innerHTML = `
 <div class="sb-sr-result">
   <div class="sb-sr-result-icon">${hasErrors ? "⚠️" : "✅"}</div>
   <div class="sb-sr-result-title">Scrape complete</div>
   <div class="sb-sr-result-summary">
-    <strong>${total}</strong> new product${total !== 1 ? "s" : ""} found across <strong>${siteCount}</strong> site${siteCount !== 1 ? "s" : ""}
-    ${hasErrors ? `<div class="sb-sr-result-warn">One or more sites had issues. Products from other sites were saved.</div>` : ""}
+    <strong>${total}</strong> new product${total !== 1 ? "s" : ""} found across <strong>${sites.length}</strong> site${sites.length !== 1 ? "s" : ""}
+    ${hasErrors ? `<div class="sb-sr-result-warn">One or more sites had issues — see the cards below for details.</div>` : ""}
   </div>
   ${total > 0 ? `<button class="btn btn-primary sb-sr-review-btn">Review Products →</button>` : ""}
 </div>
@@ -189,14 +259,17 @@ ${site_cards}`;
 			method: "alaiy_os_connector_competitor_sites.api.scrape_runner.scrape_selected_sites",
 			args: { sites: JSON.stringify(selected), product_limit: limit },
 			callback: (r) => {
-				const scrape_id = r.message && r.message.scrape_id;
-				if (!scrape_id) {
+				const msg = r.message || {};
+				const log_names = msg.log_names;
+				if (!log_names || !Object.keys(log_names).length) {
 					_showError(root, "Failed to start scrape. Please try again.");
 					btn.disabled = false;
 					btn.textContent = "⏵ Run Scrape";
 					return;
 				}
-				_pollProgress(root, btn, scrape_id, selected, {}, Date.now());
+				const startedAt = Date.now();
+				_saveState(log_names, startedAt);
+				_pollProgress(root, btn, log_names, startedAt);
 			},
 			error: () => {
 				_showError(root, "Could not connect. Please try again.");
@@ -206,15 +279,28 @@ ${site_cards}`;
 		});
 	}
 
-	function _pollProgress(root, btn, scrape_id, sites, seen, startedAt) {
-		const start = startedAt || Date.now();
-		const elapsed = Date.now() - start;
+	function _pollProgress(root, btn, log_names, startedAt) {
+		const myToken = (root._pollToken = (root._pollToken || 0) + 1);
+		const alive = () => root._pollToken === myToken;
 
-		// Hard timeout — if backend hasn't confirmed done in 90s, stop polling
-		if (elapsed > 90000) {
-			const siteCards = root.querySelector(".sb-sr-site-cards");
-			const total = Object.values(seen).reduce((s, n) => s + n, 0);
-			_showComplete(root, total, sites.length, false);
+		const sites = Object.keys(log_names);
+		const elapsed = Date.now() - (startedAt || Date.now());
+
+		// Hard timeout: 10 min per site, minimum 10 min
+		const timeoutMs = Math.max(600_000, sites.length * 600_000);
+		if (elapsed > timeoutMs) {
+			_clearState();
+			const panel = root.querySelector(".sb-sr-status-panel");
+			const site_cards = panel.querySelector(".sb-sr-site-cards")?.outerHTML || "";
+			panel.innerHTML = `
+<div class="sb-sr-result">
+  <div class="sb-sr-result-icon">⏳</div>
+  <div class="sb-sr-result-title">Still running in the background</div>
+  <div class="sb-sr-result-summary">The scrape is taking a long time. Products are being saved as they arrive — check the Review Queue in a few minutes, or open Scrape Logs to see each site's status.</div>
+  <button class="btn btn-primary sb-sr-review-btn">Check Review Queue →</button>
+</div>
+${site_cards}`;
+			panel.querySelector(".sb-sr-review-btn").addEventListener("click", () => frappe.set_route("review-queue"));
 			btn.disabled = false;
 			btn.textContent = "⏵ Run Scrape";
 			return;
@@ -222,43 +308,30 @@ ${site_cards}`;
 
 		frappe.call({
 			method: "alaiy_os_connector_competitor_sites.api.scrape_runner.get_scrape_progress",
-			args: { scrape_id },
+			args: { log_names: JSON.stringify(log_names) },
 			callback: (r) => {
-				const data = r.message || {};
-				const siteRows = data.sites || [];
-				const doneSites = data.done_sites || {};
-				const errors = data.errors || [];
+				if (!alive()) return;
+				const results = r.message || {};
 
-				// Build a count map from DB rows
-				const countMap = {};
-				siteRows.forEach((row) => {
-					countMap[row.source_site] = row.count;
-					seen[row.source_site] = row.count;
-				});
-
-				// Update cards for all sites we know are done
 				sites.forEach((site) => {
-					if (doneSites[site]) {
-						const count = countMap[site] || 0;
-						_updateSiteCard(root, site, count, true, !!doneSites[site].error);
-					} else if (countMap[site]) {
-						_updateSiteCard(root, site, countMap[site], false, false);
-					}
+					if (results[site]) _updateSiteCard(root, site, results[site]);
 				});
 
-				const allDone = sites.every((s) => doneSites[s]);
-				if (!allDone) {
-					setTimeout(() => _pollProgress(root, btn, scrape_id, sites, seen, start), 3000);
-				} else {
-					const total = siteRows.reduce((s, r) => s + r.count, 0);
-					const hasErrors = sites.some((s) => doneSites[s] && doneSites[s].error);
-					_showComplete(root, total, sites.length, hasErrors);
+				const allDone = sites.every((s) => {
+					const st = results[s]?.status;
+					return st === "Done" || st === "Failed";
+				});
+
+				if (allDone) {
+					_showComplete(root, log_names, results);
 					btn.disabled = false;
 					btn.textContent = "⏵ Run Scrape";
+				} else {
+					setTimeout(() => _pollProgress(root, btn, log_names, startedAt), POLL_MS);
 				}
 			},
 			error: () => {
-				setTimeout(() => _pollProgress(root, btn, scrape_id, sites, seen, start), 5000);
+				if (alive()) setTimeout(() => _pollProgress(root, btn, log_names, startedAt), 5000);
 			},
 		});
 	}

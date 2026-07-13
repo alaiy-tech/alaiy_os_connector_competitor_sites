@@ -67,6 +67,15 @@ def after_migrate():
     sync_connector_registry()
 
 
+def _on_sidebar_update(doc, method):
+    """Re-inject after alaiy_os wipes the sidebar on every migrate."""
+    if doc.name != _SIDEBAR_NAME:
+        return
+    labels = {r.label for r in doc.items}
+    if _SECTION_LABEL not in labels:
+        _inject_sidebar()
+
+
 def _update_alaiy_os_sidebar():
     try:
         from alaiy_os.setup.install import create_or_update_workspace_sidebar
@@ -88,6 +97,7 @@ def _inject_sidebar():
         doc.items = [r for r in doc.items if r.label not in _INJECTED_LABELS]
         for item in _SIDEBAR_ITEMS:
             doc.append("items", item)
+        doc.flags.ignore_links = True
         doc.save(ignore_permissions=True)
         frappe.db.commit()
     except Exception:

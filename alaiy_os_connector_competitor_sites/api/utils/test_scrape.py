@@ -1,40 +1,37 @@
 """
-Run with: bench execute your_app.api.utils.test_scrape.run --kwargs "{'site_url': 'https://...'}"
-Or paste into `bench console` and call run(site_url="...") directly.
+Run in bench console:
+    from alaiy_os_connector_competitor_sites.api.utils.test_scrape import run
+    run("https://www.boohoo.com/categories/womens-jewellery")
 """
 
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import (
     _get_firecrawl,
-    _scrape_listing_page,
-    MAX_LISTING_PAGES,
+    _scrape_listing_until_enough_new,
+    _already_in_db,
+    _clean_url,
 )
 
 
-def run(site_url, max_pages=MAX_LISTING_PAGES):
-    print(f"\n=== START scrape: {site_url} ===")
+def run(site_url, product_limit=50):
+    print(f"\n=== START scrape: {site_url} (target {product_limit} new) ===")
     fc = _get_firecrawl()
 
-    current_url = site_url
-    page_num = 1
-    total = 0
+    products = _scrape_listing_until_enough_new(fc, site_url, product_limit)
 
-    while current_url and page_num <= max_pages:
-        print(f"\n--- Page {page_num}: {current_url}")
-        products, next_url = _scrape_listing_page(fc, current_url)
-        print(f"    products found: {len(products)}")
-        if products:
-            print(f"    sample: {products[0]}")
-        total += len(products)
+    urls = [p.get("product_source_url") for p in products if p.get("product_source_url")]
+    clean_urls = [_clean_url(u) for u in urls]
+    existing = _already_in_db(clean_urls)
+    new_count = sum(1 for u in clean_urls if u not in existing)
 
-        if not next_url:
-            print("    no next page link found — stopping")
-            break
+    print(f"\n--- total products seen: {len(products)}")
+    print(f"--- already in DB: {len(existing)}")
+    print(f"--- new: {new_count}")
+    if products:
+        print(f"--- sample: {products[0]}")
 
-        current_url = next_url
-        page_num += 1
-
-    print(f"\n=== DONE. Total products across {page_num} page(s): {total} ===\n")
+    print(f"\n=== DONE ===\n")
+    return products
 
 
 if __name__ == "__main__":
-    run("https://www.lulus.com/categories/99_100/jewelry.html")
+    run("https://www.boohoo.com/categories/womens-jewellery")

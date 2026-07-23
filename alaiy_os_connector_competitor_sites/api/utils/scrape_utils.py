@@ -1,82 +1,69 @@
+"""
+Listing-page-only Firecrawl scraper, merged with save/log/orchestration
+functions from the original module.
+
+Strategy: scrape category/listing pages with a schema that extracts an
+ARRAY of products per call, follow pagination, dedupe against DB. That's it.
+No per-product detail scraping, no enrichment, no single-product fallback.
+"""
+
 import re
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, urljoin
 
 import frappe
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 
-_DEFINITELY_NOT_PRODUCT = re.compile(
-    r'/(search|cart|checkout|account|login|register|blog|about|contact|'
-    r'faq|policy|sitemap|wishlist|compare|gift-card|stores?)(/|$|\?)',
-    re.I,
-)
+MAX_LISTING_PAGES = 15  # pagination depth cap
 
-_PRODUCT_SCHEMA = {
+# ---------------------------------------------------------------------------
+# Schema — extracts an array of products from one listing page in one call
+# ---------------------------------------------------------------------------
+
+_LISTING_SCHEMA = {
     "type": "object",
     "properties": {
-        "product_name":       {"type": "string",  "description": "Product name or title"},
-        "images":             {"type": "array", "items": {"type": "string"}, "description": "List of product image URLs"},
-        "product_source_url": {"type": "string",  "description": "URL of this product page"},
-        "price":              {"type": "string",  "description": "Current price including $ symbol"},
-        "description":        {"type": "string",  "description": "Product description"},
-        "category":           {"type": "string",  "description": "Product category or type"},
-        "sku":                {"type": "string",  "description": "Product SKU or item number"},
+        "products": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "product_name":       {"type": "string"},
+                    "brand":              {"type": "string"},
+                    "price":              {"type": "string"},
+                    "product_source_url": {"type": "string", "description": "Absolute URL to the product's own page"},
+                    "product_image_url":  {"type": "string"},
+                    "category":           {"type": "string"},
+                    "sku":                {"type": "string"},
+                },
+                "required": ["product_name", "product_source_url"],
+            },
+        }
     },
-    "required": ["product_name"],
+    "required": ["products"],
 }
 
-_IMAGE_RE = re.compile(
-    r'https?://[^\s\)\]"\']+\.(?:jpg|jpeg|png|webp)(?:\?[^\s\)\]"\']*)?',
-    re.IGNORECASE,
-)
-# img src / data-src / data-lazy-src attributes in raw HTML
-_IMG_TAG_RE = re.compile(
-    r'<img[^>]+(?:src|data-src|data-lazy-src|data-original)=["\']'
-    r'(https?://[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']',
-    re.IGNORECASE,
-)
-# tiny images — tracking pixels, icons, thumbnails with small dimensions in URL
-_TINY_IMAGE_RE = re.compile(
-    r'[_\-x](?:[1-9]|[1-5]\d)x(?:[1-9]|[1-5]\d)[_\-\.]|'   # _40x40. or -20x30-
-    r'[?&](?:w|width|h|height|size)=(?:[1-9]|[1-9]\d)\b|'    # ?w=60 or &width=80
-    r'/(?:icon|logo|sprite|pixel|avatar|badge)[s]?[/_\-.]',   # /icons/ /logo- etc
-    re.IGNORECASE,
+_LISTING_PROMPT = (
+    "This is a product listing / category page. Extract every jewelry product "
+    "shown in the grid (necklaces, earrings, rings, bracelets, anklets, body jewelry). "
+    "Ignore banners, ads, navigation, and non-jewelry items. For each product return "
+    "its name, brand if shown, price, absolute product page URL, main image URL, "
+    "category, and SKU if visible. Do not invent a URL — omit product_source_url "
+    "if none is present."
 )
 
-
-def _extract_images(extract_images, markdown, html):
-    """Collect all product images from every source, dedup, filter tiny ones."""
-    candidates = list(extract_images or [])
-
-    # from markdown ![...](...) and bare URLs
-    if markdown:
-        candidates += _IMAGE_RE.findall(markdown)
-
-    # from raw HTML img tags (catches lazy-loaded images)
-    if html:
-        candidates += _IMG_TAG_RE.findall(html)
-
-    seen = set()
-    result = []
-    for url in candidates:
-        url = url.strip().rstrip(")")
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        if _TINY_IMAGE_RE.search(url):
-            continue
-        result.append(url)
-
-    return result[:8]  # keep up to 8 images per product
-
-WORKERS = 3
+_NEXT_PAGE_TEXT_RE = re.compile(r"next|page\s*\d+|›|»|>>", re.IGNORECASE)
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
 class FirecrawlCreditsError(Exception):
     pass
 
+
+# ---------------------------------------------------------------------------
+# Low-level helpers
+# ---------------------------------------------------------------------------
 
 def _get_firecrawl():
     api_key = frappe.conf.get("firecrawl_api_key")
@@ -93,18 +80,17 @@ def _is_credit_error(e):
     return "402" in msg or "Payment Required" in msg or "Insufficient credits" in msg or ("401" in msg and "Token missing" in msg)
 
 
+def _is_rate_limit_error(e):
+    msg = str(e).lower()
+    return "429" in msg or "rate limit" in msg
+
+
 def _clean_url(url):
-    """Strip query params/fragments and truncate to 140 chars."""
     p = urlparse(url)
     return urlunparse((p.scheme, p.netloc, p.path, "", "", ""))[:140]
 
 
-def _is_product_url(url):
-    return not bool(_DEFINITELY_NOT_PRODUCT.search(url))
-
-
 def _already_in_db(urls):
-    """Return set of URLs already saved in tabScraped Product."""
     if not urls:
         return set()
     placeholders = ",".join(["%s"] * len(urls))
@@ -115,100 +101,121 @@ def _already_in_db(urls):
     return {r[0] for r in rows}
 
 
-def _map_with_retry(fc, domain_url, keyword, limit):
-    for attempt in range(3):
+def _with_retry(fn, *args, max_attempts=3, **kwargs):
+    last_exc = None
+    for attempt in range(max_attempts):
         try:
-            kwargs = {"limit": limit}
-            if keyword:
-                kwargs["search"] = keyword
-            result = fc.map_url(domain_url, **kwargs)
-            return getattr(result, "links", None) or []
+            return fn(*args, **kwargs)
         except Exception as e:
             if _is_credit_error(e):
                 raise FirecrawlCreditsError("Firecrawl credits exhausted") from e
-            if "429" in str(e) or "rate limit" in str(e).lower():
-                wait = 60 * (attempt + 1)
-                frappe.logger().info(f"Firecrawl rate limit — waiting {wait}s")
+            if _is_rate_limit_error(e):
+                wait = 20 * (attempt + 1)
+                frappe.logger().info(f"Rate limited, waiting {wait}s (attempt {attempt + 1})")
                 time.sleep(wait)
-            else:
-                frappe.log_error(f"map_url failed for {domain_url}: {e}", "Scraper")
-                return []
-    return []
+                last_exc = e
+                continue
+            last_exc = e
+            break
+    if last_exc:
+        frappe.log_error(f"Call failed after retries: {last_exc}", "Scraper")
+    return None
 
 
-def _scrape_product_url(fc, url):
-    try:
-        result = fc.scrape_url(
-            url,
-            formats=["extract", "markdown", "html"],
-            extract={
-                "schema": _PRODUCT_SCHEMA,
-                "prompt": "Extract the product name, ALL product image URLs (full-size, not thumbnails), price, description, category, and SKU from this product page.",
-            },
-        )
-        data = getattr(result, "extract", None) or {}
-        if not isinstance(data, dict) or not data.get("product_name"):
-            return None
-
-        markdown = getattr(result, "markdown", "") or ""
-        html = getattr(result, "html", "") or ""
-        data["images"] = _extract_images(data.get("images"), markdown, html)
-        data["product_source_url"] = _clean_url(data.get("product_source_url") or url)
-        return data
-    except Exception as e:
-        if _is_credit_error(e):
-            raise FirecrawlCreditsError("Firecrawl credits exhausted") from e
-        print(f"scrape failed for {url}: {e}")
+def _find_next_page_url(markdown, current_url):
+    if not markdown:
         return None
+    for text, href in _MD_LINK_RE.findall(markdown):
+        if _NEXT_PAGE_TEXT_RE.search(text.strip()):
+            absolute = urljoin(current_url, href)
+            if urlparse(absolute).netloc == urlparse(current_url).netloc and absolute != current_url:
+                return absolute
+    return None
 
+
+# ---------------------------------------------------------------------------
+# Listing-page scraping — the only strategy
+# ---------------------------------------------------------------------------
+
+def _scrape_listing_page(fc, url):
+    """One call, returns (products_list, next_page_url_or_None)."""
+    result = _with_retry(
+        fc.scrape_url,
+        url,
+        formats=["extract", "markdown"],
+        extract={"schema": _LISTING_SCHEMA, "prompt": _LISTING_PROMPT},
+    )
+    if result is None:
+        return [], None
+
+    data = getattr(result, "extract", None) or {}
+    products = data.get("products") or []
+
+    markdown = getattr(result, "markdown", "") or ""
+    next_url = _find_next_page_url(markdown, url)
+
+    return products, next_url
+
+
+def _scrape_listing_with_pagination(fc, start_url, max_pages=MAX_LISTING_PAGES):
+    all_products = []
+    seen_urls = set()
+    current_url = start_url
+    page_num = 1
+
+    while current_url and page_num <= max_pages:
+        products, next_url = _scrape_listing_page(fc, current_url)
+
+        new_count = 0
+        for p in products:
+            src = p.get("product_source_url")
+            if src and src not in seen_urls:
+                seen_urls.add(src)
+                all_products.append(p)
+                new_count += 1
+
+        frappe.logger().info(
+            f"Listing page {page_num} ({current_url}): {len(products)} found, {new_count} new"
+        )
+
+        if next_url == current_url or (products and new_count == 0):
+            break
+
+        current_url = next_url
+        page_num += 1
+
+    return all_products
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def _scrape_firecrawl(site_url, product_limit=100):
     fc = _get_firecrawl()
-    parsed = urlparse(site_url)
-    domain_url = f"{parsed.scheme}://{parsed.netloc}"
 
-    # Step 1: discover URLs
-    # always discover broadly — "products to fetch" controls saving, not discovery
-    all_urls = _map_with_retry(fc, domain_url, None, 500)
-    product_urls = [u for u in all_urls if isinstance(u, str) and _is_product_url(u)]
-    product_urls = list(dict.fromkeys(product_urls))
+    listing_products = _scrape_listing_with_pagination(fc, site_url)
 
-    # Step 2: skip URLs already in DB (save credits)
-    clean_urls = [_clean_url(u) for u in product_urls]
+    if not listing_products:
+        return [], 0, 0
+
+    urls_found = len(listing_products)
+
+    clean_urls = [_clean_url(p["product_source_url"]) for p in listing_products]
     existing = _already_in_db(clean_urls)
-    new_urls = [u for u in product_urls if _clean_url(u) not in existing]
+    new_products = [
+        p for p in listing_products
+        if _clean_url(p["product_source_url"]) not in existing
+    ][:product_limit]
 
-    urls_found = len(product_urls)
-    already_saved = len(existing)
+    already_in_db = len(existing)
 
     frappe.logger().info(
-        f"map_url: {urls_found} product URLs found, {already_saved} already in DB, {len(new_urls)} to scrape"
+        f"Listing scrape: {urls_found} products found across pages, "
+        f"{already_in_db} already in DB, {len(new_products)} new to save"
     )
 
-    if not new_urls and not product_urls:
-        # No URLs at all — fallback to direct page scrape
-        result = fc.scrape_url(
-            site_url,
-            formats=["extract"],
-            extract={"schema": _PRODUCT_SCHEMA, "prompt": "Extract all products on this page."},
-        )
-        extract = getattr(result, "extract", None) or {}
-        items = extract.get("products") or ([extract] if extract.get("product_name") else [])
-        return _normalise(items), 0, 0
-
-    if not new_urls:
-        return [], urls_found, already_saved
-
-    # Step 3: scrape only new URLs in parallel
-    products = []
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        futures = {pool.submit(_scrape_product_url, fc, url): url for url in new_urls[:product_limit]}
-        for future in as_completed(futures):
-            data = future.result()
-            if data:
-                products.append(data)
-
-    return _normalise(products), urls_found, already_saved
+    return _normalise(new_products), urls_found, already_in_db
 
 
 def _normalise(items):
@@ -216,11 +223,9 @@ def _normalise(items):
     for item in items:
         if not item:
             continue
-        images = item.get("images") or []
-        image_url = images[0] if images else item.get("product_image_url") or ""
         out.append({
-            "product_name":       item.get("product_name") or item.get("title") or "",
-            "product_image_url":  image_url,
+            "product_name":       item.get("product_name") or "",
+            "product_image_url":  item.get("product_image_url") or "",
             "product_source_url": item.get("product_source_url") or "",
             "price":              item.get("price") or "",
             "sku":                item.get("sku") or "",
@@ -229,6 +234,10 @@ def _normalise(items):
         })
     return out
 
+
+# ---------------------------------------------------------------------------
+# Save / log / orchestration (unchanged from original module)
+# ---------------------------------------------------------------------------
 
 def _save_products(raw_products, site_name, scrape_id):
     saved = 0
@@ -273,7 +282,6 @@ def _friendly_error(e):
         return f"Request timed out scraping {msg[:80]}"
     if "connection" in msg.lower() or "network" in msg.lower():
         return "Network error — could not reach the site or Firecrawl"
-    # fallback: keep it but trim to something readable
     return msg[:300] if len(msg) > 300 else msg
 
 

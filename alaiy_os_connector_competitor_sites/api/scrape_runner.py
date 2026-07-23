@@ -3,94 +3,80 @@ import uuid
 
 import frappe
 
-from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _save_products, _scrape_firecrawl
+
+def _normalize_site_names(sites):
+    """Accept None, a single site name, a list of site names, or a JSON-encoded
+    string of either. An empty/missing result means "all competitor sites"."""
+    if isinstance(sites, str):
+        try:
+            sites = json.loads(sites)
+        except ValueError:
+            pass  # not JSON, treat as a plain site name
+
+    if isinstance(sites, str):
+        sites = [sites]
+
+    site_names = list(sites) if sites else []
+
+    if not site_names:
+        site_names = [s["name"] for s in frappe.get_all("Competitor Site", fields=["name"])]
+
+    return site_names
 
 
-@frappe.whitelist()
-def scrape_from_site(site_name):
-    """Scrape all products from a Competitor Site's URL."""
-    site = frappe.get_doc("Competitor Site", site_name)
-    scrape_id = str(uuid.uuid4())
-
+def _create_scrape_log(site_name, site_url, scrape_id, product_limit):
     log_doc = frappe.get_doc({
         "doctype": "Scrape Log",
         "site_name": site_name,
-        "site_url": site.site_url,
+        "site_url": site_url,
         "scrape_id": scrape_id,
         "status": "Queued",
-        "product_limit": 100,
+        "product_limit": product_limit,
     })
     log_doc.insert(ignore_permissions=True)
-    frappe.db.commit()
+    return log_doc
 
+
+def _enqueue_site_scrape(site_name, site_url, scrape_id, log_name, scrape_method, product_limit):
     frappe.enqueue(
         "alaiy_os_connector_competitor_sites.api.utils.scrape_utils._bg_scrape_site",
         site_name=site_name,
-        site_url=site.site_url,
+        site_url=site_url,
         scrape_id=scrape_id,
-        log_name=log_doc.name,
-        scrape_method=site.scrape_method or "Auto",
+        log_name=log_name,
+        scrape_method=scrape_method or "Auto",
+        product_limit=product_limit,
         queue="default",
         timeout=600,
     )
 
-    return {"scrape_id": scrape_id, "log_name": log_doc.name, "site": site_name}
-
 
 @frappe.whitelist()
-def scrape_single_product(product_url, site_name=None):
-    """Scrape a single product page directly."""
-    products = _scrape_firecrawl(product_url, product_limit=1)
-    scrape_id = str(uuid.uuid4())
-    saved = _save_products(products, site_name, scrape_id)
-    return {"scrape_id": scrape_id, "saved": saved, "data": products[0] if products else {}}
-
-
-@frappe.whitelist()
-def scrape_selected_sites(sites=None, product_limit=500):
-    """Enqueue scrapes for the selected Competitor Sites. Creates a Scrape Log
-    record per site immediately — before the worker even starts — so the UI
-    always has a DB row to poll."""
-    if sites:
-        site_names = json.loads(sites) if isinstance(sites, str) else sites
-    else:
-        site_names = [s["name"] for s in frappe.get_all("Competitor Site", fields=["name"])]
+def scrape_all_sites(sites=None, product_limit=500):
+    """Enqueue scrapes for Competitor Sites. If `sites` is omitted (or empty),
+    scrapes every configured site; otherwise scrapes only the given site(s).
+    `sites` may be a single site name, a list of site names, or a JSON-encoded
+    string of either. Creates a Scrape Log record per site immediately —
+    before the worker even starts — so the UI always has a DB row to poll."""
+    site_names = _normalize_site_names(sites)
 
     if not site_names:
         return {"message": "No competitor sites configured", "scrape_id": None, "log_names": {}}
 
+    product_limit = int(product_limit)
     scrape_id = str(uuid.uuid4())
+    sites_by_name = {name: frappe.get_doc("Competitor Site", name) for name in site_names}
     log_names = {}  # site_name -> log_doc.name
 
     for name in site_names:
-        site = frappe.get_doc("Competitor Site", name)
-
-        log_doc = frappe.get_doc({
-            "doctype": "Scrape Log",
-            "site_name": name,
-            "site_url": site.site_url,
-            "scrape_id": scrape_id,
-            "status": "Queued",
-            "product_limit": int(product_limit),
-        })
-        log_doc.insert(ignore_permissions=True)
+        log_doc = _create_scrape_log(name, sites_by_name[name].site_url, scrape_id, product_limit)
         log_names[name] = log_doc.name
 
     frappe.db.commit()
 
     for name in site_names:
-        site = frappe.get_doc("Competitor Site", name)
-        frappe.enqueue(
-            "alaiy_os_connector_competitor_sites.api.utils.scrape_utils._bg_scrape_site",
-            site_name=name,
-            site_url=site.site_url,
-            scrape_id=scrape_id,
-            log_name=log_names[name],
-            scrape_method=site.scrape_method or "Auto",
-            product_limit=int(product_limit),
-            queue="default",
-            timeout=600,
-        )
+        site = sites_by_name[name]
+        _enqueue_site_scrape(name, site.site_url, scrape_id, log_names[name], site.scrape_method, product_limit)
 
     return {
         "message": f"Scrape enqueued for {len(site_names)} site(s)",

@@ -256,7 +256,7 @@ ${site_cards}`;
 		_showProgress(root, selected);
 
 		frappe.call({
-			method: "alaiy_os_connector_competitor_sites.api.scrape_runner.scrape_selected_sites",
+			method: "alaiy_os_connector_competitor_sites.api.scrape_runner.scrape_all_sites",
 			args: { sites: JSON.stringify(selected), product_limit: limit },
 			callback: (r) => {
 				const msg = r.message || {};

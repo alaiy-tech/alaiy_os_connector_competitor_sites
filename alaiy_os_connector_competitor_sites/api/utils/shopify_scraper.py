@@ -1,6 +1,31 @@
 import re
 import frappe
 
+_JEWELRY_KEYWORDS = [
+    "jewelry", "jewellery", "ring", "rings", "necklace", "necklaces",
+    "earring", "earrings", "bracelet", "bracelets", "bangle", "bangles",
+    "anklet", "anklets", "pendant", "pendants", "brooch", "brooches",
+    "chain", "chains", "charm", "charms", "cufflink", "cufflinks",
+]
+_JEWELRY_RE = re.compile(r"\b(" + "|".join(_JEWELRY_KEYWORDS) + r")\b", re.IGNORECASE)
+
+
+def _normalize_tags(tags):
+    if isinstance(tags, list):
+        raw = tags
+    elif isinstance(tags, str):
+        raw = tags.split(",")
+    else:
+        raw = []
+    # store-specific tags like "LC_Jewelry" pack the real word behind an
+    # underscore, so swap separators for spaces before word-boundary matching
+    return [re.sub(r"[_-]", " ", t).strip() for t in raw if t and t.strip()]
+
+
+def _is_jewelry(product_type, tags, title):
+    haystack = " ".join([product_type or "", title or ""] + _normalize_tags(tags))
+    return bool(_JEWELRY_RE.search(haystack))
+
 
 def _strip_html(html):
     if not html:
@@ -52,6 +77,8 @@ def _fetch_products(session, endpoint, product_limit):
             break
 
         for p in batch:
+            if not _is_jewelry(p.get("product_type"), p.get("tags"), p.get("title")):
+                continue
             image = (p.get("images") or [{}])[0].get("src", "")
             if not image:
                 continue

@@ -16,6 +16,7 @@ import frappe
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 
 MAX_LISTING_PAGES = 15  # pagination depth cap
+SCRAPE_TIMEOUT_MS = 60000  # 60s — default 30s was too short for extract+markdown together
 
 # ---------------------------------------------------------------------------
 # Schema — extracts an array of products from one listing page in one call
@@ -85,6 +86,11 @@ def _is_rate_limit_error(e):
     return "429" in msg or "rate limit" in msg
 
 
+def _is_timeout_error(e):
+    msg = str(e).lower()
+    return "timeout" in msg or "timed out" in msg
+
+
 def _clean_url(url):
     p = urlparse(url)
     return urlunparse((p.scheme, p.netloc, p.path, "", "", ""))[:140]
@@ -109,9 +115,9 @@ def _with_retry(fn, *args, max_attempts=3, **kwargs):
         except Exception as e:
             if _is_credit_error(e):
                 raise FirecrawlCreditsError("Firecrawl credits exhausted") from e
-            if _is_rate_limit_error(e):
-                wait = 20 * (attempt + 1)
-                frappe.logger().info(f"Rate limited, waiting {wait}s (attempt {attempt + 1})")
+            if _is_rate_limit_error(e) or _is_timeout_error(e):
+                wait = 10 * (attempt + 1)
+                frappe.logger().info(f"Retrying after {type(e).__name__}, waiting {wait}s (attempt {attempt + 1})")
                 time.sleep(wait)
                 last_exc = e
                 continue
@@ -144,6 +150,7 @@ def _scrape_listing_page(fc, url):
         url,
         formats=["extract", "markdown"],
         extract={"schema": _LISTING_SCHEMA, "prompt": _LISTING_PROMPT},
+        timeout=SCRAPE_TIMEOUT_MS,
     )
     if result is None:
         return [], None

@@ -1,26 +1,28 @@
 """
-Listing-page-only Firecrawl scraper, merged with save/log/orchestration
-functions from the original module.
+Universal actions-based listing scraper.
 
-Strategy: scrape category/listing pages with a schema that extracts an
-ARRAY of products per call, follow pagination, dedupe against DB. That's it.
-No per-product detail scraping, no enrichment, no single-product fallback.
+Since we only need 25-50 products per site (not exhaustive catalogs),
+we don't need multi-page pagination logic at all. One page, scrolled a
+few times to trigger lazy-load / infinite-scroll, surfaces enough
+products on almost any site layout — no selectors, no per-site config.
+
+Strategy per site:
+  1. Try scroll-only actions (generic, works on infinite-scroll grids,
+     never fails since it needs no selector).
+  2. If that returns too few products, try scroll + a generic "load more"
+     click attempt — wrapped so a missing button doesn't kill the call.
+  3. Extract once at the end.
 """
 
-import re
 import time
 import uuid
-from urllib.parse import urlparse, urlunparse, urljoin
+from urllib.parse import urlparse, urlunparse
 
 import frappe
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 
-MAX_LISTING_PAGES = 15  # pagination depth cap
-SCRAPE_TIMEOUT_MS = 60000  # 60s — default 30s was too short for extract+markdown together
-
-# ---------------------------------------------------------------------------
-# Schema — extracts an array of products from one listing page in one call
-# ---------------------------------------------------------------------------
+SCRAPE_TIMEOUT_MS = 60000
+MIN_ACCEPTABLE_PRODUCTS = 20  # if scroll-only yields fewer than this, try the click fallback
 
 _LISTING_SCHEMA = {
     "type": "object",
@@ -54,17 +56,28 @@ _LISTING_PROMPT = (
     "if none is present."
 )
 
-_NEXT_PAGE_TEXT_RE = re.compile(r"next|page\s*\d+|›|»|>>", re.IGNORECASE)
-_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+# Generic scroll actions — no selector needed, safe on every site.
+_SCROLL_ACTIONS = [
+    {"type": "scroll", "direction": "down"},
+    {"type": "wait", "milliseconds": 1200},
+    {"type": "scroll", "direction": "down"},
+    {"type": "wait", "milliseconds": 1200},
+    {"type": "scroll", "direction": "down"},
+    {"type": "wait", "milliseconds": 1200},
+]
+
+# Generic "load more" click attempts — common phrasings across storefronts.
+_LOAD_MORE_SELECTORS = [
+    "text=Load more",
+    "text=Load More",
+    "text=Show more",
+    "text=View more",
+]
 
 
 class FirecrawlCreditsError(Exception):
     pass
 
-
-# ---------------------------------------------------------------------------
-# Low-level helpers
-# ---------------------------------------------------------------------------
 
 def _get_firecrawl():
     api_key = frappe.conf.get("firecrawl_api_key")
@@ -82,13 +95,11 @@ def _is_credit_error(e):
 
 
 def _is_rate_limit_error(e):
-    msg = str(e).lower()
-    return "429" in msg or "rate limit" in msg
+    return "429" in str(e) or "rate limit" in str(e).lower()
 
 
 def _is_timeout_error(e):
-    msg = str(e).lower()
-    return "timeout" in msg or "timed out" in msg
+    return "timeout" in str(e).lower() or "timed out" in str(e).lower()
 
 
 def _clean_url(url):
@@ -117,7 +128,7 @@ def _with_retry(fn, *args, max_attempts=3, **kwargs):
                 raise FirecrawlCreditsError("Firecrawl credits exhausted") from e
             if _is_rate_limit_error(e) or _is_timeout_error(e):
                 wait = 10 * (attempt + 1)
-                frappe.logger().info(f"Retrying after {type(e).__name__}, waiting {wait}s (attempt {attempt + 1})")
+                frappe.logger().info(f"Retrying after {type(e).__name__}, waiting {wait}s")
                 time.sleep(wait)
                 last_exc = e
                 continue
@@ -128,98 +139,123 @@ def _with_retry(fn, *args, max_attempts=3, **kwargs):
     return None
 
 
-def _find_next_page_url(markdown, current_url):
-    if not markdown:
-        return None
-    for text, href in _MD_LINK_RE.findall(markdown):
-        if _NEXT_PAGE_TEXT_RE.search(text.strip()):
-            absolute = urljoin(current_url, href)
-            if urlparse(absolute).netloc == urlparse(current_url).netloc and absolute != current_url:
-                return absolute
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Listing-page scraping — the only strategy
-# ---------------------------------------------------------------------------
-
-def _scrape_listing_page(fc, url):
-    """One call, returns (products_list, next_page_url_or_None)."""
+def _scrape_with_actions(fc, url, actions):
+    """Try a scrape with the given actions. Returns products list, or None on failure."""
     result = _with_retry(
         fc.scrape_url,
         url,
-        formats=["extract", "markdown"],
+        formats=["extract"],
         extract={"schema": _LISTING_SCHEMA, "prompt": _LISTING_PROMPT},
+        actions=actions,
         timeout=SCRAPE_TIMEOUT_MS,
     )
     if result is None:
-        return [], None
-
+        return None
     data = getattr(result, "extract", None) or {}
-    products = data.get("products") or []
-
-    markdown = getattr(result, "markdown", "") or ""
-    next_url = _find_next_page_url(markdown, url)
-
-    return products, next_url
+    return data.get("products") or []
 
 
-def _scrape_listing_with_pagination(fc, start_url, max_pages=MAX_LISTING_PAGES):
-    all_products = []
-    seen_urls = set()
-    current_url = start_url
-    page_num = 1
+def _scrape_listing_page(fc, url):
+    """
+    One site, one page, scrolled to surface enough products for our
+    25-50 product target. No pagination loop needed.
+    """
+    # Attempt 1: scroll-only (safe, no selector, works for infinite-scroll grids)
+    products = _scrape_with_actions(fc, url, _SCROLL_ACTIONS)
 
-    while current_url and page_num <= max_pages:
-        products, next_url = _scrape_listing_page(fc, current_url)
+    if products is not None and len(products) >= MIN_ACCEPTABLE_PRODUCTS:
+        frappe.logger().info(f"{url}: {len(products)} products via scroll-only")
+        return products
 
-        new_count = 0
-        for p in products:
+    # Attempt 2: scroll + try clicking a generic "load more" button.
+    # Each click is tried independently — a missing button just skips that
+    # one action rather than aborting the whole sequence.
+    for selector in _LOAD_MORE_SELECTORS:
+        actions = _SCROLL_ACTIONS + [
+            {"type": "click", "selector": selector},
+            {"type": "wait", "milliseconds": 1500},
+        ] + _SCROLL_ACTIONS
+        try:
+            result = _scrape_with_actions(fc, url, actions)
+            if result and (products is None or len(result) > len(products)):
+                frappe.logger().info(f"{url}: {len(result)} products via scroll+click ({selector})")
+                return result
+        except Exception as e:
+            frappe.logger().info(f"{url}: click attempt '{selector}' failed, trying next: {e}")
+            continue
+
+    # Fall back to whatever scroll-only got us, even if below the threshold
+    frappe.logger().info(f"{url}: {len(products or [])} products (scroll-only fallback)")
+    return products or []
+
+
+MAX_DEPTH_ROUNDS = 4  # how many times we'll scroll deeper looking for NEW products
+
+
+def _scrape_listing_until_enough_new(fc, url, product_limit):
+    """
+    If the first batch of products is mostly stuff we already have in the
+    DB (e.g. a repeat scrape catching the same top-of-grid items), scroll
+    deeper into the page to reach further-down, not-yet-seen products —
+    rather than stopping after one shallow pass.
+
+    Each round scrolls further than the last and merges newly-found
+    products (deduped by product_source_url) into the running set.
+    """
+    all_products_by_url = {}
+    scroll_rounds = 1
+
+    for attempt in range(MAX_DEPTH_ROUNDS):
+        actions = _SCROLL_ACTIONS * scroll_rounds
+        batch = _scrape_with_actions(fc, url, actions) or []
+
+        for p in batch:
             src = p.get("product_source_url")
-            if src and src not in seen_urls:
-                seen_urls.add(src)
-                all_products.append(p)
-                new_count += 1
+            if src:
+                all_products_by_url[src] = p  # dedup, keep latest seen
+
+        candidate_urls = [_clean_url(u) for u in all_products_by_url.keys()]
+        existing = _already_in_db(candidate_urls)
+        new_count = sum(1 for u in all_products_by_url if _clean_url(u) not in existing)
 
         frappe.logger().info(
-            f"Listing page {page_num} ({current_url}): {len(products)} found, {new_count} new"
+            f"{url}: round {attempt + 1} (scroll x{scroll_rounds}) — "
+            f"{len(all_products_by_url)} total seen, {new_count} new (target {product_limit})"
         )
 
-        if next_url == current_url or (products and new_count == 0):
+        if new_count >= product_limit:
             break
 
-        current_url = next_url
-        page_num += 1
+        scroll_rounds += 1  # scroll further next round to reach deeper products
 
-    return all_products
+    return list(all_products_by_url.values())
 
 
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def _scrape_firecrawl(site_url, product_limit=100):
+def _scrape_firecrawl(site_url, product_limit=50):
     fc = _get_firecrawl()
 
-    listing_products = _scrape_listing_with_pagination(fc, site_url)
+    products = _scrape_listing_until_enough_new(fc, site_url, product_limit)
 
-    if not listing_products:
+    if not products:
         return [], 0, 0
 
-    urls_found = len(listing_products)
+    urls_found = len(products)
 
-    clean_urls = [_clean_url(p["product_source_url"]) for p in listing_products]
+    clean_urls = [_clean_url(p["product_source_url"]) for p in products if p.get("product_source_url")]
     existing = _already_in_db(clean_urls)
     new_products = [
-        p for p in listing_products
-        if _clean_url(p["product_source_url"]) not in existing
+        p for p in products
+        if p.get("product_source_url") and _clean_url(p["product_source_url"]) not in existing
     ][:product_limit]
 
     already_in_db = len(existing)
 
     frappe.logger().info(
-        f"Listing scrape: {urls_found} products found across pages, "
-        f"{already_in_db} already in DB, {len(new_products)} new to save"
+        f"Scrape: {urls_found} products found, {already_in_db} already in DB, {len(new_products)} new to save"
     )
 
     return _normalise(new_products), urls_found, already_in_db
@@ -243,7 +279,7 @@ def _normalise(items):
 
 
 # ---------------------------------------------------------------------------
-# Save / log / orchestration (unchanged from original module)
+# Save / log / orchestration (unchanged)
 # ---------------------------------------------------------------------------
 
 def _save_products(raw_products, site_name, scrape_id):
@@ -277,7 +313,6 @@ def _save_products(raw_products, site_name, scrape_id):
 
 
 def _friendly_error(e):
-    """Convert raw exceptions to short human-readable messages."""
     msg = str(e)
     if "402" in msg or "Payment Required" in msg or "Insufficient credits" in msg:
         return "Out of Firecrawl credits — top up at firecrawl.dev/pricing"
@@ -293,7 +328,6 @@ def _friendly_error(e):
 
 
 def _update_log(log_name, **kwargs):
-    """Write status/progress fields to the Scrape Log doc in DB."""
     if not log_name:
         return
     try:
@@ -306,7 +340,7 @@ def _update_log(log_name, **kwargs):
         frappe.logger().warning(f"Could not update Scrape Log {log_name}: {e}")
 
 
-def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method="Auto", product_limit=100):
+def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method="Auto", product_limit=50):
     from alaiy_os_connector_competitor_sites.api.utils.shopify_scraper import _scrape_shopify
 
     _update_log(log_name, status="Running", started_at=frappe.utils.now_datetime())

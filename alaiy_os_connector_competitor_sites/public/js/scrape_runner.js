@@ -61,11 +61,7 @@
       <select class="sb-sr-limit-select">
         <option value="10">10</option>
         <option value="25">25</option>
-        <option value="100" selected>100</option>
-        <option value="250">250</option>
-        <option value="500">500</option>
-        <option value="1000">1,000</option>
-        <option value="0">All</option>
+        <option value="50" selected>50</option>
       </select>
     </div>
     <button class="btn sb-sr-run-btn" disabled>

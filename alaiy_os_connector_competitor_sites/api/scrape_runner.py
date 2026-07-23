@@ -63,7 +63,7 @@ def scrape_all_sites(sites=None, product_limit=500):
     if not site_names:
         return {"message": "No competitor sites configured", "scrape_id": None, "log_names": {}}
 
-    product_limit = int(product_limit)
+    product_limit = min(int(product_limit), 50)
     scrape_id = str(uuid.uuid4())
     sites_by_name = {name: frappe.get_doc("Competitor Site", name) for name in site_names}
     log_names = {}  # site_name -> log_doc.name

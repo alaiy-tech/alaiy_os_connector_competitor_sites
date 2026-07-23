@@ -302,15 +302,19 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
         urls_found = 0
         already_in_db = 0
 
+        shopify_skip_urls = set(frappe.get_all(
+            "Scraped Product", filters={"source_site": site_name}, pluck="source_product_url"
+        ))
+
         if scrape_method == "Shopify":
-            products = _scrape_shopify(site_url, product_limit=product_limit)
+            products = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
             method_used = "Shopify"
         elif scrape_method == "Firecrawl":
             products, urls_found, already_in_db = _scrape_firecrawl(site_url, product_limit=product_limit)
             method_used = "Firecrawl"
         else:
             try:
-                products = _scrape_shopify(site_url, product_limit=product_limit)
+                products = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
             except Exception:
                 products = []
             if products:

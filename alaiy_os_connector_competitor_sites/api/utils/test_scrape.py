@@ -1,40 +1,40 @@
-import json
-import os
-import re
+"""
+Run with: bench execute your_app.api.utils.test_scrape.run --kwargs "{'site_url': 'https://...'}"
+Or paste into `bench console` and call run(site_url="...") directly.
+"""
 
-import frappe
+from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import (
+    _get_firecrawl,
+    _scrape_listing_page,
+    MAX_LISTING_PAGES,
+)
 
-from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _run_scrape_strategy
+
+def run(site_url, max_pages=MAX_LISTING_PAGES):
+    print(f"\n=== START scrape: {site_url} ===")
+    fc = _get_firecrawl()
+
+    current_url = site_url
+    page_num = 1
+    total = 0
+
+    while current_url and page_num <= max_pages:
+        print(f"\n--- Page {page_num}: {current_url}")
+        products, next_url = _scrape_listing_page(fc, current_url)
+        print(f"    products found: {len(products)}")
+        if products:
+            print(f"    sample: {products[0]}")
+        total += len(products)
+
+        if not next_url:
+            print("    no next page link found — stopping")
+            break
+
+        current_url = next_url
+        page_num += 1
+
+    print(f"\n=== DONE. Total products across {page_num} page(s): {total} ===\n")
 
 
-def test_scrape_url(site_url, scrape_method="Auto", product_limit=500, output_dir=None):
-    """Run the scrape strategy for a single URL and write raw results to a JSON file.
-
-    Does not touch the Scraped Product doctype or the database in any way -
-    for manually spot-checking a site's scrape output before deciding whether
-    to add it as a Competitor Site.
-
-    Usage:
-        bench --site stellar.brands execute alaiy_os_connector_competitor_sites.api.utils.test_scrape.test_scrape_url \\
-            --kwargs '{"site_url": "https://example.com/collections/jewelry"}'
-    """
-    products, method_used = _run_scrape_strategy(site_url, scrape_method, product_limit)
-
-    output_dir = output_dir or os.path.join(frappe.utils.get_bench_path(), "scrape_test_output")
-    os.makedirs(output_dir, exist_ok=True)
-
-    slug = re.sub(r"[^a-z0-9]+", "-", site_url.lower()).strip("-")[:60]
-    timestamp = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.join(output_dir, f"{slug}_{timestamp}.json")
-
-    with open(output_path, "w") as f:
-        json.dump({
-            "site_url": site_url,
-            "scrape_method_requested": scrape_method,
-            "method_used": method_used,
-            "count": len(products),
-            "products": products,
-        }, f, indent=2, default=str)
-
-    print(f"Scraped {len(products)} products from {site_url} via {method_used} -> {output_path}")
-    return output_path
+if __name__ == "__main__":
+    run("https://www.lulus.com/categories/99_100/jewelry.html")

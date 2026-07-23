@@ -84,11 +84,11 @@
 		return `
 <tr data-site="${_esc(s.name)}">
   <td class="sb-wm-col-check"><input type="checkbox" class="sb-wm-row-check"></td>
-  <td class="sb-wm-col-website">
+  <td class="sb-wm-col-website" title="${_esc(s.site_url)}">
     <div class="sb-wm-site-name">${_esc(s.name)}</div>
     <div class="sb-wm-site-url">${_esc(s.site_url)}</div>
   </td>
-  <td class="sb-wm-col-categories">${cats || '<span class="sb-wm-none">—</span>'}</td>
+  <td class="sb-wm-col-categories" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${cats || '<span class="sb-wm-none">—</span>'}</td>
   <td class="sb-wm-col-status"><span class="sb-wm-status-badge sb-wm-status-active">● Active</span></td>
   <td class="sb-wm-col-scraped">${lastScraped}</td>
   <td class="sb-wm-col-products">${s.product_count || 0}</td>

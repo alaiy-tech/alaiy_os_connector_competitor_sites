@@ -29,7 +29,7 @@ def add_site(site_name, site_url, categories=None):
         "doctype": "Competitor Site",
         "site_name": site_name,
         "site_url": site_url,
-        "categories": categories or "",
+        "categories": categories or "Jewellery, Accessories",
         "is_active": 1,
     })
     doc.insert(ignore_permissions=True)

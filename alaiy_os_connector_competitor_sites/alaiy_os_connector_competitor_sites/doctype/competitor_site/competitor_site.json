@@ -22,7 +22,7 @@
   },
   {
    "fieldname": "site_url",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Site URL",
    "reqd": 1,
    "in_list_view": 1

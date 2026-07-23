@@ -5,7 +5,7 @@ app_description = "Jewelry Feeder Platform"
 app_email = "amit@alaiy.com"
 app_license = "mit"
 
-_V = "20260709b"
+_V = "20260716c"
 app_include_js = [
     f"/assets/alaiy_os_connector_competitor_sites/js/connector_card.js?v={_V}",
     f"/assets/alaiy_os_connector_competitor_sites/js/website_manager.js?v={_V}",

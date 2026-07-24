@@ -148,7 +148,7 @@ def _scrape_page(api_key, url):
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def _scrape_firecrawl(site_url, product_limit=50):
+def _scrape_firecrawl(site_url):
     api_key = _get_firecrawl_api_key()
 
     products = []
@@ -172,12 +172,6 @@ def _scrape_firecrawl(site_url, product_limit=50):
         if not new:
             print("  no new products on this page, stopping pagination")
             break
-        if product_limit and len(products) >= product_limit:
-            print(f"  hit product_limit ({product_limit}), stopping pagination")
-            break
-
-    if product_limit:
-        products = products[:product_limit]
 
     if not products:
         print("Done. No products found.")
@@ -282,7 +276,7 @@ def _update_log(log_name, **kwargs):
         frappe.logger().warning(f"Could not update Scrape Log {log_name}: {e}")
 
 
-def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method="Auto", product_limit=50):
+def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method="Auto"):
     from alaiy_os_connector_competitor_sites.api.utils.shopify_scraper import _scrape_shopify
 
     _update_log(log_name, status="Running", started_at=frappe.utils.now_datetime())
@@ -298,15 +292,15 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
         ))
 
         if scrape_method == "Shopify":
-            products, already_in_db = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
+            products, already_in_db = _scrape_shopify(site_url, skip_urls=shopify_skip_urls)
             urls_found = len(products) + already_in_db
             method_used = "Shopify"
         elif scrape_method == "Firecrawl":
-            products, urls_found, already_in_db = _scrape_firecrawl(site_url, product_limit=product_limit)
+            products, urls_found, already_in_db = _scrape_firecrawl(site_url)
             method_used = "Firecrawl"
         else:
             try:
-                products, already_in_db = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
+                products, already_in_db = _scrape_shopify(site_url, skip_urls=shopify_skip_urls)
             except Exception:
                 products, already_in_db = [], 0
             if products or already_in_db:
@@ -315,7 +309,7 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
                 urls_found = len(products) + already_in_db
                 method_used = "Shopify"
             else:
-                products, urls_found, already_in_db = _scrape_firecrawl(site_url, product_limit=product_limit)
+                products, urls_found, already_in_db = _scrape_firecrawl(site_url)
                 method_used = "Firecrawl"
 
         saved = _save_products(products, site_name, scrape_id)

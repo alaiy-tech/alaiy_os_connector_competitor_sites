@@ -10,7 +10,6 @@
   "scrape_id",
   "status",
   "method_used",
-  "product_limit",
   "urls_found",
   "already_in_db",
   "products_saved",
@@ -46,11 +45,6 @@
    "fieldname": "method_used",
    "fieldtype": "Data",
    "label": "Method Used"
-  },
-  {
-   "fieldname": "product_limit",
-   "fieldtype": "Int",
-   "label": "Product Limit"
   },
   {
    "fieldname": "urls_found",

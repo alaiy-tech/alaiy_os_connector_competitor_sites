@@ -7,10 +7,10 @@ Run in bench console:
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _scrape_firecrawl
 
 
-def run(site_url, product_limit=50):
-    print(f"\n=== START scrape: {site_url} (target {product_limit} new) ===")
+def run(site_url):
+    print(f"\n=== START scrape: {site_url} ===")
 
-    products, urls_found, already_in_db = _scrape_firecrawl(site_url, product_limit)
+    products, urls_found, already_in_db = _scrape_firecrawl(site_url)
 
     print(f"\n--- total products found: {urls_found}")
     print(f"--- already in DB: {already_in_db}")

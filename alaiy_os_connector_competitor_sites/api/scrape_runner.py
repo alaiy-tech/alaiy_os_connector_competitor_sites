@@ -24,20 +24,19 @@ def _normalize_site_names(sites):
     return site_names
 
 
-def _create_scrape_log(site_name, site_url, scrape_id, product_limit):
+def _create_scrape_log(site_name, site_url, scrape_id):
     log_doc = frappe.get_doc({
         "doctype": "Scrape Log",
         "site_name": site_name,
         "site_url": site_url,
         "scrape_id": scrape_id,
         "status": "Queued",
-        "product_limit": product_limit,
     })
     log_doc.insert(ignore_permissions=True)
     return log_doc
 
 
-def _enqueue_site_scrape(site_name, site_url, scrape_id, log_name, scrape_method, product_limit):
+def _enqueue_site_scrape(site_name, site_url, scrape_id, log_name, scrape_method):
     frappe.enqueue(
         "alaiy_os_connector_competitor_sites.api.utils.scrape_utils._bg_scrape_site",
         site_name=site_name,
@@ -45,14 +44,13 @@ def _enqueue_site_scrape(site_name, site_url, scrape_id, log_name, scrape_method
         scrape_id=scrape_id,
         log_name=log_name,
         scrape_method=scrape_method or "Auto",
-        product_limit=product_limit,
         queue="default",
         timeout=600,
     )
 
 
 @frappe.whitelist()
-def scrape_all_sites(sites=None, product_limit=500):
+def scrape_all_sites(sites=None):
     """Enqueue scrapes for Competitor Sites. If `sites` is omitted (or empty),
     scrapes every configured site; otherwise scrapes only the given site(s).
     `sites` may be a single site name, a list of site names, or a JSON-encoded
@@ -63,20 +61,19 @@ def scrape_all_sites(sites=None, product_limit=500):
     if not site_names:
         return {"message": "No competitor sites configured", "scrape_id": None, "log_names": {}}
 
-    product_limit = min(int(product_limit), 50)
     scrape_id = str(uuid.uuid4())
     sites_by_name = {name: frappe.get_doc("Competitor Site", name) for name in site_names}
     log_names = {}  # site_name -> log_doc.name
 
     for name in site_names:
-        log_doc = _create_scrape_log(name, sites_by_name[name].site_url, scrape_id, product_limit)
+        log_doc = _create_scrape_log(name, sites_by_name[name].site_url, scrape_id)
         log_names[name] = log_doc.name
 
     frappe.db.commit()
 
     for name in site_names:
         site = sites_by_name[name]
-        _enqueue_site_scrape(name, site.site_url, scrape_id, log_names[name], site.scrape_method, product_limit)
+        _enqueue_site_scrape(name, site.site_url, scrape_id, log_names[name], site.scrape_method)
 
     return {
         "message": f"Scrape enqueued for {len(site_names)} site(s)",

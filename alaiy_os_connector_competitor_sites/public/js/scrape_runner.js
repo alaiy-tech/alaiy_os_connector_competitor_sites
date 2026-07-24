@@ -55,14 +55,6 @@
       <span class="sb-sr-count">0 selected</span>
       <a class="sb-sr-select-all" href="#">Select all</a>
     </div>
-    <div class="sb-sr-limit-wrap">
-      <label class="sb-sr-limit-label">Products to fetch</label>
-      <select class="sb-sr-limit-select">
-        <option value="10">10</option>
-        <option value="25">25</option>
-        <option value="50" selected>50</option>
-      </select>
-    </div>
     <button class="btn sb-sr-run-btn" disabled>
       ⏵ Run Scrape
     </button>
@@ -267,7 +259,6 @@ ${site_cards}`;
 
 		const selected = [...root.querySelectorAll(".sb-sr-check-input:checked")]
 			.map((i) => i.closest(".sb-sr-site-item").dataset.name);
-		const limit = parseInt(root.querySelector(".sb-sr-limit-select").value) || 0;
 
 		const btn = root.querySelector(".sb-sr-run-btn");
 		_setLocked(root, true);
@@ -276,7 +267,7 @@ ${site_cards}`;
 
 		frappe.call({
 			method: "alaiy_os_connector_competitor_sites.api.scrape_runner.scrape_all_sites",
-			args: { sites: JSON.stringify(selected), product_limit: limit },
+			args: { sites: JSON.stringify(selected) },
 			callback: (r) => {
 				const msg = r.message || {};
 				const log_names = msg.log_names;

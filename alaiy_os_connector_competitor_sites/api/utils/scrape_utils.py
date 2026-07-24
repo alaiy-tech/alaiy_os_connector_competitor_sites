@@ -1,92 +1,61 @@
 """
-Universal actions-based listing scraper.
+Category-listing pagination scraper.
 
-Since we only need 25-50 products per site (not exhaustive catalogs),
-we don't need multi-page pagination logic at all. One page, scrolled a
-few times to trigger lazy-load / infinite-scroll, surfaces enough
-products on almost any site layout — no selectors, no per-site config.
-
-Strategy per site:
-  1. Try scroll-only actions (generic, works on infinite-scroll grids,
-     never fails since it needs no selector).
-  2. If that returns too few products, try scroll + a generic "load more"
-     click attempt — wrapped so a missing button doesn't kill the call.
-  3. Extract once at the end.
+Pages through a listing/category URL by incrementing a `?p=N` query param
+(the convention this app's non-Shopify sites use), extracting products from
+each page via Firecrawl's v2 scrape endpoint, and stops once a page returns
+no new products (past the last page) or the requested limit is reached.
 """
 
 import time
 import uuid
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import frappe
-from firecrawl import V1FirecrawlApp as FirecrawlApp
+import requests
 
-SCRAPE_TIMEOUT_MS = 60000
-MIN_ACCEPTABLE_PRODUCTS = 20  # if scroll-only yields fewer than this, try the click fallback
+SCRAPE_ENDPOINT = "https://api.firecrawl.dev/v2/scrape"
+MAX_PAGES = 30  # safety cap
 
-_LISTING_SCHEMA = {
+_PRODUCT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "product_name":       {"type": "string",  "description": "Product name or title"},
+        "images":             {"type": "array", "items": {"type": "string"}, "description": "List of product image URLs"},
+        "product_source_url": {"type": "string",  "description": "URL of this product page"},
+        "price":              {"type": "string",  "description": "Current price including $ symbol"},
+        "description":        {"type": "string",  "description": "Product description"},
+        "category":           {"type": "string",  "description": "Product category or type"},
+        "sku":                {"type": "string",  "description": "Product SKU or item number"},
+    },
+    "required": ["product_name"],
+}
+
+_EXTRACT_SCHEMA = {
     "type": "object",
     "properties": {
         "products": {
             "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "product_name":       {"type": "string"},
-                    "brand":              {"type": "string"},
-                    "price":              {"type": "string"},
-                    "product_source_url": {"type": "string", "description": "Absolute URL to the product's own page"},
-                    "product_image_url":  {"type": "string"},
-                    "category":           {"type": "string"},
-                    "sku":                {"type": "string"},
-                },
-                "required": ["product_name", "product_source_url"],
-            },
+            "items": _PRODUCT_SCHEMA,
+            "description": "Every product listed on the page",
         }
     },
     "required": ["products"],
 }
-
-_LISTING_PROMPT = (
-    "This is a product listing / category page. Extract every jewelry product "
-    "shown in the grid (necklaces, earrings, rings, bracelets, anklets, body jewelry). "
-    "Ignore banners, ads, navigation, and non-jewelry items. For each product return "
-    "its name, brand if shown, price, absolute product page URL, main image URL, "
-    "category, and SKU if visible. Do not invent a URL — omit product_source_url "
-    "if none is present."
-)
-
-# Generic scroll actions — no selector needed, safe on every site.
-_SCROLL_ACTIONS = [
-    {"type": "scroll", "direction": "down"},
-    {"type": "wait", "milliseconds": 1200},
-    {"type": "scroll", "direction": "down"},
-    {"type": "wait", "milliseconds": 1200},
-    {"type": "scroll", "direction": "down"},
-    {"type": "wait", "milliseconds": 1200},
-]
-
-# Generic "load more" click attempts — common phrasings across storefronts.
-_LOAD_MORE_SELECTORS = [
-    "text=Load more",
-    "text=Load More",
-    "text=Show more",
-    "text=View more",
-]
 
 
 class FirecrawlCreditsError(Exception):
     pass
 
 
-def _get_firecrawl():
+def _get_firecrawl_api_key():
     api_key = frappe.conf.get("firecrawl_api_key")
     if not api_key:
         settings = frappe.get_single("Stellar Brands Connector Settings")
         api_key = settings.get_password("sb_firecrawl_api_key")
     if not api_key:
         frappe.throw("Firecrawl API key not set. Add firecrawl_api_key to site_config.json.")
-    return FirecrawlApp(api_key=api_key)
+    return api_key
 
 
 def _is_credit_error(e):
@@ -139,96 +108,40 @@ def _with_retry(fn, *args, max_attempts=3, **kwargs):
     return None
 
 
-def _scrape_with_actions(fc, url, actions):
-    """Try a scrape with the given actions. Returns products list, or None on failure."""
-    result = _with_retry(
-        fc.scrape_url,
-        url,
-        formats=["extract"],
-        extract={"schema": _LISTING_SCHEMA, "prompt": _LISTING_PROMPT},
-        actions=actions,
-        timeout=SCRAPE_TIMEOUT_MS,
-    )
-    if result is None:
-        return None
-    data = getattr(result, "extract", None) or {}
-    return data.get("products") or []
+def _page_url(base, page):
+    parts = urlparse(base)
+    query = urlencode({"p": page})
+    return urlunparse(parts._replace(query=query))
 
 
-def _scrape_listing_page(fc, url):
-    """
-    One site, one page, scrolled to surface enough products for our
-    25-50 product target. No pagination loop needed.
-    """
-    # Attempt 1: scroll-only (safe, no selector, works for infinite-scroll grids)
-    products = _scrape_with_actions(fc, url, _SCROLL_ACTIONS)
+def _scrape_page(api_key, url):
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "url": url,
+        "onlyMainContent": True,
+        # Give the client-side grid time to hydrate before extraction.
+        "actions": [{"type": "wait", "milliseconds": 3500}],
+        "formats": [
+            {
+                "type": "json",
+                "prompt": "Extract every product shown on this listing page.",
+                "schema": _EXTRACT_SCHEMA,
+            }
+        ],
+    }
 
-    if products is not None and len(products) >= MIN_ACCEPTABLE_PRODUCTS:
-        frappe.logger().info(f"{url}: {len(products)} products via scroll-only")
-        return products
+    resp = requests.post(SCRAPE_ENDPOINT, headers=headers, json=payload, timeout=300)
+    if not resp.ok:
+        raise Exception(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
-    # Attempt 2: scroll + try clicking a generic "load more" button.
-    # Each click is tried independently — a missing button just skips that
-    # one action rather than aborting the whole sequence.
-    for selector in _LOAD_MORE_SELECTORS:
-        actions = _SCROLL_ACTIONS + [
-            {"type": "click", "selector": selector},
-            {"type": "wait", "milliseconds": 1500},
-        ] + _SCROLL_ACTIONS
-        try:
-            result = _scrape_with_actions(fc, url, actions)
-            if result and (products is None or len(result) > len(products)):
-                frappe.logger().info(f"{url}: {len(result)} products via scroll+click ({selector})")
-                return result
-        except Exception as e:
-            frappe.logger().info(f"{url}: click attempt '{selector}' failed, trying next: {e}")
-            continue
+    result = resp.json()
+    if not result.get("success"):
+        raise Exception(f"Scrape failed: {result}")
 
-    # Fall back to whatever scroll-only got us, even if below the threshold
-    frappe.logger().info(f"{url}: {len(products or [])} products (scroll-only fallback)")
-    return products or []
-
-
-MAX_DEPTH_ROUNDS = 4  # how many times we'll scroll deeper looking for NEW products
-
-
-def _scrape_listing_until_enough_new(fc, url, product_limit):
-    """
-    If the first batch of products is mostly stuff we already have in the
-    DB (e.g. a repeat scrape catching the same top-of-grid items), scroll
-    deeper into the page to reach further-down, not-yet-seen products —
-    rather than stopping after one shallow pass.
-
-    Each round scrolls further than the last and merges newly-found
-    products (deduped by product_source_url) into the running set.
-    """
-    all_products_by_url = {}
-    scroll_rounds = 1
-
-    for attempt in range(MAX_DEPTH_ROUNDS):
-        actions = _SCROLL_ACTIONS * scroll_rounds
-        batch = _scrape_with_actions(fc, url, actions) or []
-
-        for p in batch:
-            src = p.get("product_source_url")
-            if src:
-                all_products_by_url[src] = p  # dedup, keep latest seen
-
-        candidate_urls = [_clean_url(u) for u in all_products_by_url.keys()]
-        existing = _already_in_db(candidate_urls)
-        new_count = sum(1 for u in all_products_by_url if _clean_url(u) not in existing)
-
-        frappe.logger().info(
-            f"{url}: round {attempt + 1} (scroll x{scroll_rounds}) — "
-            f"{len(all_products_by_url)} total seen, {new_count} new (target {product_limit})"
-        )
-
-        if new_count >= product_limit:
-            break
-
-        scroll_rounds += 1  # scroll further next round to reach deeper products
-
-    return list(all_products_by_url.values())
+    return result.get("data", {}).get("json", {}).get("products", []) or []
 
 
 # ---------------------------------------------------------------------------
@@ -236,11 +149,38 @@ def _scrape_listing_until_enough_new(fc, url, product_limit):
 # ---------------------------------------------------------------------------
 
 def _scrape_firecrawl(site_url, product_limit=50):
-    fc = _get_firecrawl()
+    api_key = _get_firecrawl_api_key()
 
-    products = _scrape_listing_until_enough_new(fc, site_url, product_limit)
+    products = []
+    seen = set()
+
+    for page in range(1, MAX_PAGES + 1):
+        url = _page_url(site_url, page)
+        print(f"Scraping page {page}: {url}")
+        batch = _with_retry(_scrape_page, api_key, url) or []
+
+        new = [p for p in batch if p.get("product_source_url") not in seen]
+        for p in new:
+            if p.get("product_source_url"):
+                seen.add(p["product_source_url"])
+        products.extend(new)
+
+        print(f"  +{len(new)} new (total {len(products)})")
+        frappe.logger().info(f"{url}: +{len(new)} new (total {len(products)})")
+
+        # Stop when a page adds nothing new (past the last page).
+        if not new:
+            print("  no new products on this page, stopping pagination")
+            break
+        if product_limit and len(products) >= product_limit:
+            print(f"  hit product_limit ({product_limit}), stopping pagination")
+            break
+
+    if product_limit:
+        products = products[:product_limit]
 
     if not products:
+        print("Done. No products found.")
         return [], 0, 0
 
     urls_found = len(products)
@@ -250,10 +190,10 @@ def _scrape_firecrawl(site_url, product_limit=50):
     new_products = [
         p for p in products
         if p.get("product_source_url") and _clean_url(p["product_source_url"]) not in existing
-    ][:product_limit]
-
+    ]
     already_in_db = len(existing)
 
+    print(f"Done. {urls_found} found, {already_in_db} already in DB, {len(new_products)} new to save")
     frappe.logger().info(
         f"Scrape: {urls_found} products found, {already_in_db} already in DB, {len(new_products)} new to save"
     )
@@ -266,9 +206,11 @@ def _normalise(items):
     for item in items:
         if not item:
             continue
+        images = item.get("images") or []
+        image_url = images[0] if images else item.get("product_image_url") or ""
         out.append({
             "product_name":       item.get("product_name") or "",
-            "product_image_url":  item.get("product_image_url") or "",
+            "product_image_url":  image_url,
             "product_source_url": item.get("product_source_url") or "",
             "price":              item.get("price") or "",
             "sku":                item.get("sku") or "",
@@ -324,7 +266,7 @@ def _friendly_error(e):
         return f"Request timed out scraping {msg[:80]}"
     if "connection" in msg.lower() or "network" in msg.lower():
         return "Network error — could not reach the site or Firecrawl"
-    return msg[:300] if len(msg) > 300 else msg
+    return "Scrape failed unexpectedly — check the Error Log for details"
 
 
 def _update_log(log_name, **kwargs):
@@ -356,17 +298,21 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
         ))
 
         if scrape_method == "Shopify":
-            products = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
+            products, already_in_db = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
+            urls_found = len(products) + already_in_db
             method_used = "Shopify"
         elif scrape_method == "Firecrawl":
             products, urls_found, already_in_db = _scrape_firecrawl(site_url, product_limit=product_limit)
             method_used = "Firecrawl"
         else:
             try:
-                products = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
+                products, already_in_db = _scrape_shopify(site_url, product_limit=product_limit, skip_urls=shopify_skip_urls)
             except Exception:
-                products = []
-            if products:
+                products, already_in_db = [], 0
+            if products or already_in_db:
+                # a confirmed Shopify store — even if fully caught up (0 new),
+                # don't burn Firecrawl credits re-scraping it
+                urls_found = len(products) + already_in_db
                 method_used = "Shopify"
             else:
                 products, urls_found, already_in_db = _scrape_firecrawl(site_url, product_limit=product_limit)

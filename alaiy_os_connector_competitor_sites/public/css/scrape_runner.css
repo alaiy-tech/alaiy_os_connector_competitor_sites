@@ -181,6 +181,10 @@
 .sb-sr-run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .sb-sr-run-btn:not(:disabled):hover { background: var(--gray-700, #333); }
 
+.sb-sr-left.sb-sr-locked .sb-sr-site-list { opacity: 0.5; pointer-events: none; }
+.sb-sr-left.sb-sr-locked .sb-sr-select-all { opacity: 0.4; pointer-events: none; cursor: not-allowed; }
+.sb-sr-filter:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── Right panel ─────────────────────────────────────────────────── */
 .sb-sr-right {
 	flex: 1;
@@ -289,6 +293,12 @@
 	margin-top: 6px;
 	font-size: 12px;
 	color: #b45309;
+}
+
+.sb-sr-result-note {
+	margin-top: 6px;
+	font-size: 12px;
+	color: var(--text-muted);
 }
 
 .sb-sr-review-btn {

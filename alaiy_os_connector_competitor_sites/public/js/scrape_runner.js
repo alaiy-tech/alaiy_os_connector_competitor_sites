@@ -30,9 +30,8 @@
 
 		const sites = Object.keys(log_names);
 		_showProgress(root, sites);
+		_setLocked(root, true);
 		const btn = root.querySelector(".sb-sr-run-btn");
-		btn.disabled = true;
-		btn.textContent = "Running…";
 
 		_pollProgress(root, btn, log_names, startedAt || Date.now());
 		return true;
@@ -114,6 +113,7 @@
 		root.querySelectorAll(".sb-sr-site-item").forEach((item) => {
 			item.addEventListener("click", (e) => {
 				e.preventDefault();
+				if (root._scraping) return;
 				const inp = item.querySelector(".sb-sr-check-input");
 				inp.checked = !inp.checked;
 				item.classList.toggle("sb-sr-checked", inp.checked);
@@ -132,6 +132,7 @@
 
 		root.querySelector(".sb-sr-select-all").addEventListener("click", (e) => {
 			e.preventDefault();
+			if (root._scraping) return;
 			const all = root.querySelectorAll(".sb-sr-site-item:not([style*='none'])");
 			const anyUnchecked = [...all].some((i) => !i.querySelector(".sb-sr-check-input").checked);
 			all.forEach((item) => {
@@ -147,7 +148,21 @@
 	function _updateCount(root) {
 		const n = root.querySelectorAll(".sb-sr-check-input:checked").length;
 		root.querySelector(".sb-sr-count").textContent = n === 1 ? "1 selected" : `${n} selected`;
-		root.querySelector(".sb-sr-run-btn").disabled = n === 0;
+		if (!root._scraping) root.querySelector(".sb-sr-run-btn").disabled = n === 0;
+	}
+
+	function _setLocked(root, locked) {
+		root._scraping = locked;
+		root.querySelector(".sb-sr-left").classList.toggle("sb-sr-locked", locked);
+		root.querySelector(".sb-sr-filter").disabled = locked;
+		const btn = root.querySelector(".sb-sr-run-btn");
+		if (locked) {
+			btn.disabled = true;
+			btn.textContent = "Running…";
+		} else {
+			btn.disabled = root.querySelectorAll(".sb-sr-check-input:checked").length === 0;
+			btn.textContent = "⏵ Run Scrape";
+		}
 	}
 
 	// ── Progress cards ────────────────────────────────────────────────────────
@@ -161,7 +176,7 @@
   <div class="sb-sr-site-card" data-site="${_esc(s)}">
     <div class="sb-sr-card-left">
       <div class="sb-sr-card-name">${_esc(s)}</div>
-      <div class="sb-sr-card-sub">Queued…</div>
+      <div class="sb-sr-card-sub">Waiting in queue…</div>
     </div>
     <div class="sb-sr-card-badge sb-sr-badge-pending">Queued</div>
   </div>`).join("")}
@@ -173,18 +188,24 @@
 		if (!card) return;
 		const sub = card.querySelector(".sb-sr-card-sub");
 		const badge = card.querySelector(".sb-sr-card-badge");
-		const { status, products_saved = 0, already_in_db = 0, urls_found = 0, log } = info;
+		const { status, products_saved = 0, already_in_db = 0, urls_found = 0, log, elapsed_seconds = 0 } = info;
 
 		if (status === "Failed") {
 			// Show the friendly error message directly on the card
 			const errorText = log || "Unknown error";
-			const isCredits = errorText.toLowerCase().includes("credits");
+			const lower = errorText.toLowerCase();
+			let badgeText = "Failed";
+			if (lower.includes("credit")) badgeText = "No Credits";
+			else if (lower.includes("rate limit")) badgeText = "Rate Limited";
+			else if (lower.includes("timed out") || lower.includes("timeout")) badgeText = "Timed Out";
 			sub.innerHTML = `<span class="sb-sr-card-error">${_esc(errorText)}</span>`;
-			badge.textContent = isCredits ? "No Credits" : "Failed";
+			badge.textContent = badgeText;
 			badge.className = "sb-sr-card-badge sb-sr-badge-error";
 
 		} else if (status === "Done") {
-			if (already_in_db > 0 && products_saved === 0) {
+			if (products_saved === 0 && already_in_db === 0 && urls_found === 0) {
+				sub.textContent = "No products found on this site";
+			} else if (already_in_db > 0 && products_saved === 0) {
 				sub.textContent = `${already_in_db} already in DB — all up to date`;
 			} else if (already_in_db > 0) {
 				sub.textContent = `${products_saved} new · ${already_in_db} already saved`;
@@ -195,12 +216,11 @@
 			badge.className = "sb-sr-card-badge sb-sr-badge-done";
 
 		} else if (status === "Running") {
-			if (!card._startedAt) card._startedAt = Date.now();
-			const elapsed = Math.round((Date.now() - card._startedAt) / 1000);
+			const elapsed = elapsed_seconds || Math.round((Date.now() - (card._startedAt || (card._startedAt = Date.now()))) / 1000);
 			const timeStr = elapsed > 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
 			sub.textContent = urls_found
-				? `${urls_found} URLs found, ${products_saved} saved… (${timeStr})`
-				: `Mapping site… (${timeStr})`;
+				? `${products_saved} new saved so far · ${urls_found} scanned (${timeStr})`
+				: `Scanning site… (${timeStr})`;
 			badge.textContent = "Running";
 			badge.className = "sb-sr-card-badge sb-sr-badge-running";
 
@@ -218,6 +238,7 @@
 		const site_cards = panel.querySelector(".sb-sr-site-cards")?.outerHTML || "";
 		const sites = Object.keys(log_names);
 		const total = sites.reduce((sum, s) => sum + (results[s]?.products_saved || 0), 0);
+		const totalAlready = sites.reduce((sum, s) => sum + (results[s]?.already_in_db || 0), 0);
 		const hasErrors = sites.some((s) => results[s]?.status === "Failed");
 
 		panel.innerHTML = `
@@ -226,6 +247,7 @@
   <div class="sb-sr-result-title">Scrape complete</div>
   <div class="sb-sr-result-summary">
     <strong>${total}</strong> new product${total !== 1 ? "s" : ""} found across <strong>${sites.length}</strong> site${sites.length !== 1 ? "s" : ""}
+    ${total === 0 && totalAlready > 0 ? `<div class="sb-sr-result-note">Everything was already up to date — ${totalAlready} product${totalAlready !== 1 ? "s" : ""} matched existing entries.</div>` : ""}
     ${hasErrors ? `<div class="sb-sr-result-warn">One or more sites had issues — see the cards below for details.</div>` : ""}
   </div>
   ${total > 0 ? `<button class="btn btn-primary sb-sr-review-btn">Review Products →</button>` : ""}
@@ -241,13 +263,14 @@ ${site_cards}`;
 	// ── Run ───────────────────────────────────────────────────────────────────
 
 	function _runScrape(root) {
+		if (root._scraping) return;
+
 		const selected = [...root.querySelectorAll(".sb-sr-check-input:checked")]
 			.map((i) => i.closest(".sb-sr-site-item").dataset.name);
 		const limit = parseInt(root.querySelector(".sb-sr-limit-select").value) || 0;
 
 		const btn = root.querySelector(".sb-sr-run-btn");
-		btn.disabled = true;
-		btn.textContent = "Running…";
+		_setLocked(root, true);
 
 		_showProgress(root, selected);
 
@@ -259,8 +282,7 @@ ${site_cards}`;
 				const log_names = msg.log_names;
 				if (!log_names || !Object.keys(log_names).length) {
 					_showError(root, "Failed to start scrape. Please try again.");
-					btn.disabled = false;
-					btn.textContent = "⏵ Run Scrape";
+					_setLocked(root, false);
 					return;
 				}
 				const startedAt = Date.now();
@@ -269,8 +291,7 @@ ${site_cards}`;
 			},
 			error: () => {
 				_showError(root, "Could not connect. Please try again.");
-				btn.disabled = false;
-				btn.textContent = "⏵ Run Scrape";
+				_setLocked(root, false);
 			},
 		});
 	}
@@ -297,8 +318,7 @@ ${site_cards}`;
 </div>
 ${site_cards}`;
 			panel.querySelector(".sb-sr-review-btn").addEventListener("click", () => frappe.set_route("review-queue"));
-			btn.disabled = false;
-			btn.textContent = "⏵ Run Scrape";
+			_setLocked(root, false);
 			return;
 		}
 
@@ -320,8 +340,7 @@ ${site_cards}`;
 
 				if (allDone) {
 					_showComplete(root, log_names, results);
-					btn.disabled = false;
-					btn.textContent = "⏵ Run Scrape";
+					_setLocked(root, false);
 				} else {
 					setTimeout(() => _pollProgress(root, btn, log_names, startedAt), POLL_MS);
 				}

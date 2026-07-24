@@ -58,11 +58,13 @@ def _parse_link_header(header):
 
 
 def _fetch_products(session, endpoint, product_limit, skip_urls=None):
-    """Paginate a Shopify products.json endpoint and return all products up to limit.
-    Products whose URL is in skip_urls (already scraped previously) are skipped
-    without counting against product_limit, so a repeat scrape advances to new ones."""
+    """Paginate a Shopify products.json endpoint and return all products up to limit,
+    plus a count of how many were skipped because they're already scraped previously
+    (in skip_urls). Skipped products don't count against product_limit, so a repeat
+    scrape advances past what's already saved and finds new ones instead."""
     skip_urls = skip_urls or set()
     products = []
+    skipped = 0
     next_url = endpoint
     while next_url:
         try:
@@ -83,7 +85,10 @@ def _fetch_products(session, endpoint, product_limit, skip_urls=None):
             handle_val = p.get("handle", "")
             base = endpoint.split("/collections/")[0].split("/products")[0]
             source_url = f"{base}/products/{handle_val}" if handle_val else ""
-            if not source_url or source_url in skip_urls:
+            if not source_url:
+                continue
+            if source_url in skip_urls:
+                skipped += 1
                 continue
             if not _is_jewelry(p.get("product_type"), p.get("tags"), p.get("title")):
                 continue
@@ -101,10 +106,10 @@ def _fetch_products(session, endpoint, product_limit, skip_urls=None):
                 "category": p.get("product_type", ""),
             })
             if product_limit and len(products) >= product_limit:
-                return products
+                return products, skipped
 
         next_url = _parse_link_header(r.headers.get("Link"))
-    return products
+    return products, skipped
 
 
 def _scrape_shopify(site_url, product_limit=500, skip_urls=None):
@@ -115,13 +120,17 @@ def _scrape_shopify(site_url, product_limit=500, skip_urls=None):
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0"})
 
+    skipped_total = 0
+
     if handle:
         # Try the specific collection first
-        products = _fetch_products(session, f"{base}/collections/{handle}/products.json?limit=250", product_limit, skip_urls)
+        products, skipped = _fetch_products(session, f"{base}/collections/{handle}/products.json?limit=250", product_limit, skip_urls)
+        skipped_total += skipped
         # If the collection returned very few, also pull from root to get more
         if len(products) < min(product_limit, 20):
             frappe.logger().info(f"Collection '{handle}' only has {len(products)} products, pulling from root products.json too")
-            root_products = _fetch_products(session, f"{base}/products.json?limit=250", product_limit, skip_urls)
+            root_products, root_skipped = _fetch_products(session, f"{base}/products.json?limit=250", product_limit, skip_urls)
+            skipped_total += root_skipped
             # merge, dedupe by product_source_url
             seen = {p["product_source_url"] for p in products}
             for p in root_products:
@@ -131,6 +140,6 @@ def _scrape_shopify(site_url, product_limit=500, skip_urls=None):
                     if product_limit and len(products) >= product_limit:
                         break
     else:
-        products = _fetch_products(session, f"{base}/products.json?limit=250", product_limit, skip_urls)
+        products, skipped_total = _fetch_products(session, f"{base}/products.json?limit=250", product_limit, skip_urls)
 
-    return products
+    return products, skipped_total

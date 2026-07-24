@@ -96,6 +96,10 @@ def get_scrape_progress(log_names):
     for site_name, log_name in log_names.items():
         try:
             doc = frappe.get_doc("Scrape Log", log_name)
+            elapsed_seconds = 0
+            if doc.started_at:
+                end = frappe.utils.get_datetime(doc.completed_at) if doc.completed_at else frappe.utils.now_datetime()
+                elapsed_seconds = int((end - frappe.utils.get_datetime(doc.started_at)).total_seconds())
             results[site_name] = {
                 "status": doc.status,
                 "products_saved": doc.products_saved or 0,
@@ -104,6 +108,7 @@ def get_scrape_progress(log_names):
                 "log": doc.log or "",
                 "method_used": doc.method_used or "",
                 "log_name": log_name,
+                "elapsed_seconds": elapsed_seconds,
             }
         except Exception as e:
             results[site_name] = {
@@ -114,6 +119,7 @@ def get_scrape_progress(log_names):
                 "log": f"Could not read log record: {e}",
                 "method_used": "",
                 "log_name": log_name,
+                "elapsed_seconds": 0,
             }
 
     return results

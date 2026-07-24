@@ -6,6 +6,13 @@
 
 	const STORAGE_KEY = "sb_scrape_active_v2";
 	const POLL_MS = 3000;
+	const TIP_MS = 4000;
+	const SCRAPE_TIPS = [
+		"This usually takes 2-3 minutes…",
+		"Checking each site for new products…",
+		"Already-scraped products are skipped automatically…",
+		"Results are saved as soon as each site finishes…",
+	];
 
 	// ── State (localStorage) ─────────────────────────────────────────────────
 
@@ -163,6 +170,7 @@
 		const panel = root.querySelector(".sb-sr-status-panel");
 		panel.innerHTML = `
 <div class="sb-sr-progress-header">Scraping ${sites.length} site${sites.length !== 1 ? "s" : ""}…</div>
+<div class="sb-sr-progress-tip"></div>
 <div class="sb-sr-site-cards">
   ${sites.map((s) => `
   <div class="sb-sr-site-card" data-site="${_esc(s)}">
@@ -173,6 +181,24 @@
     <div class="sb-sr-card-badge sb-sr-badge-pending">Queued</div>
   </div>`).join("")}
 </div>`;
+		_startTips(root);
+	}
+
+	function _startTips(root) {
+		clearInterval(root._tipInterval);
+		let i = 0;
+		const tipEl = root.querySelector(".sb-sr-progress-tip");
+		if (tipEl) tipEl.textContent = SCRAPE_TIPS[0];
+		root._tipInterval = setInterval(() => {
+			const el = root.querySelector(".sb-sr-progress-tip");
+			if (!el) { clearInterval(root._tipInterval); return; }
+			i = (i + 1) % SCRAPE_TIPS.length;
+			el.textContent = SCRAPE_TIPS[i];
+		}, TIP_MS);
+	}
+
+	function _stopTips(root) {
+		clearInterval(root._tipInterval);
 	}
 
 	function _updateSiteCard(root, site, info) {
@@ -226,6 +252,7 @@
 
 	function _showComplete(root, log_names, results) {
 		_clearState();
+		_stopTips(root);
 		const panel = root.querySelector(".sb-sr-status-panel");
 		const site_cards = panel.querySelector(".sb-sr-site-cards")?.outerHTML || "";
 		const sites = Object.keys(log_names);
@@ -298,6 +325,7 @@ ${site_cards}`;
 		const timeoutMs = Math.max(600_000, sites.length * 600_000);
 		if (elapsed > timeoutMs) {
 			_clearState();
+			_stopTips(root);
 			const panel = root.querySelector(".sb-sr-status-panel");
 			const site_cards = panel.querySelector(".sb-sr-site-cards")?.outerHTML || "";
 			panel.innerHTML = `
@@ -343,6 +371,7 @@ ${site_cards}`;
 	}
 
 	function _showError(root, msg) {
+		_stopTips(root);
 		const panel = root.querySelector(".sb-sr-status-panel");
 		panel.innerHTML = `
 <div class="sb-sr-idle">

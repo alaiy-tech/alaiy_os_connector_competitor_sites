@@ -158,10 +158,12 @@
 			: p.review_status === "Skipped" ? "rq-card-skipped" : "";
 		return `
 <div class="rq-card ${cls}" data-name="${_esc(p.name)}">
-  <div class="rq-card-img-wrap">${img}</div>
-  <div class="rq-card-actions">
-    <button class="rq-card-btn rq-card-btn-skip" title="Skip">✕ Skip</button>
-    <button class="rq-card-btn rq-card-btn-keep" title="Keep">✓ Keep</button>
+  <div class="rq-card-img-wrap">
+    ${img}
+    <div class="rq-card-actions">
+      <button class="rq-card-btn rq-card-btn-skip" title="Skip">✕ Skip</button>
+      <button class="rq-card-btn rq-card-btn-keep" title="Keep">✓ Keep</button>
+    </div>
   </div>
   <div class="rq-card-body">
     <div class="rq-card-name">${_esc(p.product_name || "—")}</div>

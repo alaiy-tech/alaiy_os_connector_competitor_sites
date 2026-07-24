@@ -126,13 +126,25 @@
   background: var(--control-bg);
 }
 
-/* Card hover actions */
+/* Card hover actions — overlaid on the image, never changes card height */
 .rq-card-actions {
-  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
   flex-direction: row;
   border-top: 1px solid var(--border-color);
+  opacity: 0;
+  transform: translateY(100%);
+  transition: opacity 0.15s, transform 0.15s;
+  pointer-events: none;
 }
-.rq-card:hover .rq-card-actions { display: flex; }
+.rq-card:hover .rq-card-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
 .rq-card-btn {
   flex: 1;
   border: none;

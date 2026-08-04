@@ -251,7 +251,12 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         # the very first ?page=1 fetch found 109 cards, a
                         # near-identical repeat fetch moments later found 0.
                         try:
-                            page.wait_for_timeout(1200)
+                            page.wait_for_timeout(1500)
+                            # Many grids lazy-load product images/cards only once
+                            # they're within (or near) the viewport — a plain
+                            # domcontentloaded load never triggers that.
+                            page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+                            page.wait_for_timeout(800)
                         except Exception:
                             pass
 

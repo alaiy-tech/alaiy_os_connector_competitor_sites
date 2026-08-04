@@ -319,7 +319,7 @@ def _fit(value, max_len):
     return value[:max_len] if len(value) > max_len else value
 
 
-def _save_products(raw_products, site_name, scrape_id):
+def _save_products(raw_products, site_name, scrape_id, stats=None):
     """Insert each product inside its own savepoint. Previously a single bad
     row (e.g. a >140-char URL) raised inside the loop with no rollback —
     MariaDB aborts the whole transaction at that point, so every row after
@@ -327,9 +327,12 @@ def _save_products(raw_products, site_name, scrape_id):
     bad row cost exactly one row.
 
     Returns just `saved` (int) to preserve the existing call-site contract
-    (`saved = _save_products(...)`). already_in_db/save_failed are tracked
-    for logging but not part of the return value here — Phase 4's Deep
-    runner uses its own incremental saver and surfaces those counts."""
+    (`saved = _save_products(...)`). Pass a dict as `stats` to also get
+    already_in_db/save_failed counted into it in place (keys "already_in_db"
+    and "save_failed", added to if already present) — used by the Deep
+    runner, which needs accurate already-in-db counts for its own reporting
+    since it saves incrementally in batches rather than via the single
+    upstream _already_in_db() check Firecrawl/Shopify do."""
     saved = 0
     already_in_db = 0
     save_failed = 0
@@ -372,6 +375,9 @@ def _save_products(raw_products, site_name, scrape_id):
             _log_error(f"Scraper: failed to save product ({site_name})", f"{source_url}: {e}")
 
     frappe.db.commit()
+    if stats is not None:
+        stats["already_in_db"] = stats.get("already_in_db", 0) + already_in_db
+        stats["save_failed"] = stats.get("save_failed", 0) + save_failed
     return saved
 
 

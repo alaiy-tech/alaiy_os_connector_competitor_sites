@@ -108,13 +108,15 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
     pending_save_buffer = []
 
     def flush_buffer():
-        nonlocal total_saved, pending_save_buffer
+        nonlocal total_saved, total_already_in_db, pending_save_buffer
         if not pending_save_buffer:
             return
-        saved_now = _save_products(pending_save_buffer, site_name, scrape_id)
+        stats = {}
+        saved_now = _save_products(pending_save_buffer, site_name, scrape_id, stats=stats)
         total_saved += saved_now
+        total_already_in_db += stats.get("already_in_db", 0)
         pending_save_buffer = []
-        _heartbeat(log_name, last_beat_at, products_saved=total_saved)
+        _heartbeat(log_name, last_beat_at, products_saved=total_saved, already_in_db=total_already_in_db)
 
     def handle_candidate(row, listing_url_for_validation):
         nonlocal total_urls_found
@@ -133,11 +135,14 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
             flush_buffer()
 
     # --- Tier 0: products.json probe, no browser --------------------------
+    known_urls = set(frappe.get_all(
+        "Scraped Product", filters={"source_site": site_name}, pluck="source_product_url"
+    ))
     try:
-        rows0, skipped0 = extract.try_products_json(site_url)
-    except Exception as e:
+        rows0, skipped0 = extract.try_products_json(site_url, skip_urls=known_urls)
+    except Exception:
         rows0, skipped0 = [], 0
-        transcript.add(f"TIER 0  http probe failed: {e}")
+        transcript.add("TIER 0  http probe failed")
 
     total_already_in_db += skipped0
     if rows0:

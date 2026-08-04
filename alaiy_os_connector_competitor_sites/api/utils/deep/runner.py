@@ -19,11 +19,7 @@ from alaiy_os_connector_competitor_sites.api.utils.deep import extract
 from alaiy_os_connector_competitor_sites.api.utils.deep import paginate
 from alaiy_os_connector_competitor_sites.api.utils.deep.budget import Budget, ResourceGuard
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _log_error, _save_products
-from alaiy_os_connector_competitor_sites.api.utils.validate import (
-    is_jewelry_extended,
-    parse_price,
-    validate_row,
-)
+from alaiy_os_connector_competitor_sites.api.utils.validate import is_jewelry_extended, validate_row
 
 _SAVE_BATCH_SIZE = 40
 _HEARTBEAT_MIN_INTERVAL = 15  # seconds

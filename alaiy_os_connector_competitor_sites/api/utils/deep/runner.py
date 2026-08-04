@@ -233,34 +233,25 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
 
                 page = context.new_page()
                 try:
-                    def fetch_page(url):
-                        nonlocal pages_fetched
-                        t0 = time.monotonic()
+                    def _load_and_extract(url):
                         try:
                             page.goto(url, timeout=_DOM_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
                         except Exception as e:
                             transcript.add(f"  GET {url}  nav error: {e}")
                             return []
-                        pages_fetched += 1
 
                         # Client-rendered grids often paint products a few hundred ms
                         # after domcontentloaded (React/Vue hydration, lazy image
-                        # observers). Without this, extraction can race the render
-                        # and intermittently see an empty grid on a page that
-                        # genuinely has products — confirmed on this exact box:
-                        # the very first ?page=1 fetch found 109 cards, a
-                        # near-identical repeat fetch moments later found 0.
+                        # observers) — extraction can race the render and see an
+                        # empty grid on a page that genuinely has products.
                         try:
                             page.wait_for_timeout(1500)
                             # Many grids lazy-load product images/cards only once
-                            # they're within (or near) the viewport — a plain
-                            # domcontentloaded load never triggers that.
+                            # they're within (or near) the viewport.
                             page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
                             page.wait_for_timeout(800)
                         except Exception:
                             pass
-
-                        budget.record_page_duration(time.monotonic() - t0)
 
                         html = ""
                         try:
@@ -275,6 +266,28 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             if len(dom_rows) > len(rows):
                                 rows = dom_rows
                                 source = "dom"
+                        return rows, source
+
+                    def fetch_page(url):
+                        nonlocal pages_fetched
+                        t0 = time.monotonic()
+                        rows, source = _load_and_extract(url)
+                        pages_fetched += 1
+
+                        # A page that renders 0 candidates is ambiguous — genuinely
+                        # empty, or the render just hadn't settled yet. One retry
+                        # with a fresh reload (not just another wait) resolves this
+                        # in practice: confirmed on this exact codebase against a
+                        # real Shopify storefront where identical fetches of the
+                        # same URL alternated between 0 and 109 candidates.
+                        if not rows:
+                            page.wait_for_timeout(1000)
+                            rows, source = _load_and_extract(url)
+                            pages_fetched += 1
+                            if rows:
+                                source = f"{source}, retry"
+
+                        budget.record_page_duration(time.monotonic() - t0)
                         transcript.add(f"  GET {url}  {len(rows)} candidates via {source}")
                         return rows
 

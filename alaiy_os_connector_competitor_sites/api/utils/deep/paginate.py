@@ -32,20 +32,31 @@ def _overlap(a, b):
 
 def detect_pagination(base_url, fetch_page):
     """fetch_page(url) -> list[dict] of candidate product rows for that URL.
-    Returns a dict describing the working scheme, or None if nothing could
-    be verified (caller should fall back to treating this as a single page).
+    Returns (scheme, page1_rows). `scheme` is a dict describing the working
+    pagination convention, or None if nothing could be verified — in which
+    case `page1_rows` (the rows found on the FIRST page tried, which is
+    genuinely page 1 of the listing) should be used directly by the caller
+    rather than fetching the bare base_url a second time. On sites where
+    that repeat fetch behaves differently (confirmed on this exact
+    codebase against a real Shopify storefront: a fresh ?page=1 fetch found
+    109 real product cards, but a second plain fetch of the un-paramed URL
+    moments later found 0), re-fetching would silently throw away a good
+    result.
 
     Scheme dict: {"key": str, "start": int, "step": int, "page_size": int|None}
     """
     existing_query = dict(parse_qsl(urlparse(base_url).query))
+    first_page_rows = []
 
     # Special-case the "start=&sz=" (offset + page size) convention some
     # Salesforce Commerce Cloud sites use — e.g. Penningtons.
     if "start" in existing_query and "sz" in existing_query:
         page_size = int(existing_query["sz"]) if str(existing_query["sz"]).isdigit() else 48
         ok, page1_rows = _verify_offset(base_url, fetch_page, "start", 0, page_size)
+        if page1_rows:
+            first_page_rows = page1_rows
         if ok:
-            return {"key": "start", "start": 0, "step": page_size, "page_size": page_size}
+            return {"key": "start", "start": 0, "step": page_size, "page_size": page_size}, page1_rows
 
     ordered_keys = [k for k in _CANDIDATE_KEYS if k in existing_query] + [
         k for k in _CANDIDATE_KEYS if k not in existing_query
@@ -58,10 +69,12 @@ def detect_pagination(base_url, fetch_page):
         ok, page1_rows = _verify_numeric(base_url, fetch_page, key, base_page, step, page1_rows_cache)
         if page1_rows_cache is None:
             page1_rows_cache = page1_rows
+            if page1_rows:
+                first_page_rows = page1_rows
         if ok:
-            return {"key": key, "start": base_page, "step": step, "page_size": None}
+            return {"key": key, "start": base_page, "step": step, "page_size": None}, page1_rows
 
-    return None
+    return None, first_page_rows
 
 
 def _verify_numeric(base_url, fetch_page, key, base_page, step, page1_rows_cache):

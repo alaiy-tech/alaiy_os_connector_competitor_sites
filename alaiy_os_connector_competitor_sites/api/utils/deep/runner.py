@@ -278,7 +278,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         transcript.add(f"  GET {url}  {len(rows)} candidates via {source}")
                         return rows
 
-                    scheme = paginate.detect_pagination(listing_url, fetch_page)
+                    scheme, first_page_rows = paginate.detect_pagination(listing_url, fetch_page)
                     if scheme:
                         transcript.add(f"PAGINATION  detected key={scheme['key']} start={scheme['start']} step={scheme['step']}")
                         for _page_url, rows in paginate.iter_pages(listing_url, scheme, fetch_page):
@@ -298,9 +298,15 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                                 transcript.add(f"LIMIT  reached configured max ({limit}) — stopping.")
                                 break
                     else:
-                        transcript.add("PAGINATION  no verified scheme — using page 1 only.")
-                        rows = fetch_page(listing_url)
-                        for row in rows:
+                        # Use the rows already found while probing candidate keys —
+                        # do NOT re-fetch the bare listing_url. Confirmed on this
+                        # exact codebase: a fresh ?page=1 fetch found 109 real
+                        # product cards, but a second plain fetch of the un-paramed
+                        # URL moments later found 0 (the site behaves differently on
+                        # a repeat navigation within the same page/session). Reusing
+                        # what was already verified to render is strictly safer.
+                        transcript.add(f"PAGINATION  no verified scheme — using the {len(first_page_rows)} row(s) already found on page 1.")
+                        for row in first_page_rows:
                             handle_candidate(row, listing_url)
                 finally:
                     try:

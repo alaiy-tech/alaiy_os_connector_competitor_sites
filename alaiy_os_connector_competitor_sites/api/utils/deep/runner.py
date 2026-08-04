@@ -242,6 +242,19 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             transcript.add(f"  GET {url}  nav error: {e}")
                             return []
                         pages_fetched += 1
+
+                        # Client-rendered grids often paint products a few hundred ms
+                        # after domcontentloaded (React/Vue hydration, lazy image
+                        # observers). Without this, extraction can race the render
+                        # and intermittently see an empty grid on a page that
+                        # genuinely has products — confirmed on this exact box:
+                        # the very first ?page=1 fetch found 109 cards, a
+                        # near-identical repeat fetch moments later found 0.
+                        try:
+                            page.wait_for_timeout(1200)
+                        except Exception:
+                            pass
+
                         budget.record_page_duration(time.monotonic() - t0)
 
                         html = ""

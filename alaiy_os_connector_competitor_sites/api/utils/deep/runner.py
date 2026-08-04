@@ -13,6 +13,7 @@ import time
 
 import frappe
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import blocking
 from alaiy_os_connector_competitor_sites.api.utils.deep import browser as browser_mod
 from alaiy_os_connector_competitor_sites.api.utils.deep import extract
 from alaiy_os_connector_competitor_sites.api.utils.deep import paginate
@@ -238,7 +239,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             page.goto(url, timeout=_DOM_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
                         except Exception as e:
                             transcript.add(f"  GET {url}  nav error: {e}")
-                            return []
+                            return [], "nav_error", None
 
                         # Client-rendered grids often paint products a few hundred ms
                         # after domcontentloaded (React/Vue hydration, lazy image
@@ -259,6 +260,10 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         except Exception:
                             pass
 
+                        block = blocking.classify(html)
+                        if block != blocking.OK:
+                            return [], block, html
+
                         rows = extract.extract_json_ld(html)
                         source = "json-ld"
                         if len(rows) < 3:
@@ -266,24 +271,38 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             if len(dom_rows) > len(rows):
                                 rows = dom_rows
                                 source = "dom"
-                        return rows, source
+                        return rows, source, html
 
                     def fetch_page(url):
                         nonlocal pages_fetched
                         t0 = time.monotonic()
-                        rows, source = _load_and_extract(url)
+                        rows, source, html = _load_and_extract(url)
                         pages_fetched += 1
 
-                        # A page that renders 0 candidates is ambiguous — genuinely
-                        # empty, or the render just hadn't settled yet. One retry
-                        # with a fresh reload (not just another wait) resolves this
-                        # in practice: confirmed on this exact codebase against a
-                        # real Shopify storefront where identical fetches of the
-                        # same URL alternated between 0 and 109 candidates.
-                        if not rows:
-                            page.wait_for_timeout(1000)
-                            rows, source = _load_and_extract(url)
+                        if source == blocking.RATE_LIMITED:
+                            wait = blocking.backoff_seconds(html, attempt=0)
+                            transcript.add(f"  GET {url}  RATE LIMITED — backing off {wait}s")
+                            page.wait_for_timeout(wait * 1000)
+                            rows, source, html = _load_and_extract(url)
                             pages_fetched += 1
+                            if source == blocking.RATE_LIMITED:
+                                transcript.add(f"  GET {url}  still rate limited after backoff — giving up on this page")
+                                return []
+                        elif source in (blocking.CHALLENGE, blocking.CAPTCHA, blocking.GEOBLOCK):
+                            # No bypass attempts, ever. Log plainly and move on —
+                            # a per-site "use Firecrawl instead" note belongs in the
+                            # final summary_line, not here.
+                            transcript.add(f"  GET {url}  BLOCKED ({source}) — no bypass attempted")
+                            return []
+                        elif not rows:
+                            # Ambiguous 0-result page (not a detected block) — one
+                            # retry with a fresh reload before accepting "empty".
+                            page.wait_for_timeout(1000)
+                            rows, source, html = _load_and_extract(url)
+                            pages_fetched += 1
+                            if source in (blocking.RATE_LIMITED, blocking.CHALLENGE, blocking.CAPTCHA, blocking.GEOBLOCK):
+                                transcript.add(f"  GET {url}  {source} on retry — giving up on this page")
+                                return []
                             if rows:
                                 source = f"{source}, retry"
 

@@ -7,9 +7,14 @@
  "field_order": [
   "site_name",
   "site_url",
+  "listing_urls",
   "categories",
   "is_active",
-  "scrape_method"
+  "scrape_method",
+  "deep_max_products",
+  "filter_jewelry",
+  "require_price",
+  "deep_state"
  ],
  "fields": [
   {
@@ -28,6 +33,12 @@
    "in_list_view": 1
   },
   {
+   "fieldname": "listing_urls",
+   "fieldtype": "Small Text",
+   "label": "Listing URLs (Deep)",
+   "description": "Optional, one per line. Used by the Deep method instead of Site URL when Site URL is a bare homepage rather than a product listing (e.g. anthropologie.com). Falls back to Site URL if left blank."
+  },
+  {
    "fieldname": "categories",
    "fieldtype": "Data",
    "label": "Categories",
@@ -43,9 +54,35 @@
    "fieldname": "scrape_method",
    "fieldtype": "Select",
    "label": "Scrape Method",
-   "options": "Auto\nShopify\nFirecrawl",
+   "options": "Auto\nShopify\nFirecrawl\nDeep",
    "default": "Auto",
-   "description": "Auto = try Shopify JSON first, fall back to Firecrawl"
+   "description": "Auto = try Shopify JSON first, fall back to Firecrawl. Deep = generic Playwright-based scraper (pagination discovery, JS rendering) — opt-in only for now, not part of Auto."
+  },
+  {
+   "fieldname": "deep_max_products",
+   "fieldtype": "Int",
+   "label": "Deep: Max Products",
+   "description": "0 = unlimited (bounded only by the time budget). Used by the Deep method as a hard cap per run."
+  },
+  {
+   "default": "1",
+   "fieldname": "filter_jewelry",
+   "fieldtype": "Check",
+   "label": "Deep: Filter To Jewelry Only",
+   "description": "If the match rate across a run is very low, Deep keeps everything and logs the fact rather than silently discarding most rows — this only forces the filter on when it's actually working."
+  },
+  {
+   "default": "1",
+   "fieldname": "require_price",
+   "fieldtype": "Check",
+   "label": "Deep: Require Price"
+  },
+  {
+   "fieldname": "deep_state",
+   "fieldtype": "Long Text",
+   "label": "Deep State (internal)",
+   "hidden": 1,
+   "description": "JSON resume cursor + discovered pagination scheme. Managed by the Deep scraper — do not edit by hand."
   }
  ],
  "links": [],

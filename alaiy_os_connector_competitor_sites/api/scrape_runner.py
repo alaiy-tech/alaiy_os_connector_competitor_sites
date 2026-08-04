@@ -3,6 +3,8 @@ import uuid
 
 import frappe
 
+from alaiy_os_connector_competitor_sites.api.utils.scrape_watchdog import maybe_reap
+
 
 def _normalize_site_names(sites):
     """Accept None, a single site name, a list of site names, or a JSON-encoded
@@ -37,15 +39,22 @@ def _create_scrape_log(site_name, site_url, scrape_id):
 
 
 def _enqueue_site_scrape(site_name, site_url, scrape_id, log_name, scrape_method):
+    method = scrape_method or "Auto"
+    # Deep goes on the `long` queue. Only one of the two supervisor workers on
+    # this box serves `long` (the other serves short,default), so this also
+    # limits Deep to one concurrent Playwright browser host-wide — the memory
+    # ceiling on this server can't sustain two. Shopify/Firecrawl are
+    # untouched (default/600, as before).
+    queue, timeout = ("long", 2100) if method == "Deep" else ("default", 600)
     frappe.enqueue(
         "alaiy_os_connector_competitor_sites.api.utils.scrape_utils._bg_scrape_site",
         site_name=site_name,
         site_url=site_url,
         scrape_id=scrape_id,
         log_name=log_name,
-        scrape_method=scrape_method or "Auto",
-        queue="default",
-        timeout=600,
+        scrape_method=method,
+        queue=queue,
+        timeout=timeout,
     )
 
 
@@ -56,6 +65,7 @@ def scrape_all_sites(sites=None):
     `sites` may be a single site name, a list of site names, or a JSON-encoded
     string of either. Creates a Scrape Log record per site immediately —
     before the worker even starts — so the UI always has a DB row to poll."""
+    maybe_reap()
     site_names = _normalize_site_names(sites)
 
     if not site_names:
@@ -86,6 +96,7 @@ def scrape_all_sites(sites=None):
 def get_scrape_progress(log_names):
     """Return per-site status by reading Scrape Log records directly from DB.
     log_names: dict of {site_name: log_doc_name}"""
+    maybe_reap()
     if isinstance(log_names, str):
         log_names = json.loads(log_names)
 
@@ -106,6 +117,8 @@ def get_scrape_progress(log_names):
                 "method_used": doc.method_used or "",
                 "log_name": log_name,
                 "elapsed_seconds": elapsed_seconds,
+                # additive — existing frontend code that doesn't know this key ignores it
+                "summary_line": getattr(doc, "summary_line", "") or "",
             }
         except Exception as e:
             results[site_name] = {

@@ -41,14 +41,23 @@ def reap_stale_scrape_logs():
 
 
 def _reap_running():
+    # Compare against frappe.utils.now_datetime(), NOT SQL's NOW(). Frappe
+    # stores every Datetime field in the site's configured local timezone
+    # (System Settings.time_zone) — on this server that's Asia/Kolkata
+    # (UTC+5:30) — while MySQL's own NOW() returns the DB server's system
+    # clock (UTC here). Comparing started_at/last_heartbeat against NOW()
+    # produced a large NEGATIVE age every time, so this never matched and
+    # no row was ever reaped. Confirmed live: a genuinely stuck 12+ minute
+    # Deep run sat in "Running" through several 5-min cron ticks untouched
+    # because of this exact mismatch.
     rows = frappe.db.sql(
         """
         SELECT name, products_saved, started_at, last_heartbeat
         FROM `tabScrape Log`
         WHERE status = 'Running'
-          AND TIMESTAMPDIFF(SECOND, COALESCE(last_heartbeat, started_at, creation), NOW()) > %s
+          AND TIMESTAMPDIFF(SECOND, COALESCE(last_heartbeat, started_at, creation), %s) > %s
         """,
-        (_STALE_RUNNING_SECONDS,),
+        (frappe.utils.now_datetime(), _STALE_RUNNING_SECONDS),
         as_dict=True,
     )
     for row in rows:
@@ -77,13 +86,15 @@ def _reap_running():
 
 
 def _reap_queued():
+    # Same fix as _reap_running: compare against Frappe's site-local clock,
+    # not MySQL's NOW().
     rows = frappe.db.sql(
         """
         SELECT name FROM `tabScrape Log`
         WHERE status = 'Queued'
-          AND TIMESTAMPDIFF(SECOND, creation, NOW()) > %s
+          AND TIMESTAMPDIFF(SECOND, creation, %s) > %s
         """,
-        (_STALE_QUEUED_SECONDS,),
+        (frappe.utils.now_datetime(), _STALE_QUEUED_SECONDS),
         as_dict=True,
     )
     for row in rows:

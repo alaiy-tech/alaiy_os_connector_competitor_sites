@@ -53,10 +53,19 @@ class _Transcript:
         return text
 
 
-def _heartbeat(log_name, last_beat_at, **extra_fields):
+def _heartbeat(log_name, last_beat_at, transcript=None, **extra_fields):
+    """Also persists the live transcript text when one is passed -- before
+    this, the Scrape Log's `log` field only got written once at the very
+    end (_finalize), so a still-running or killed-mid-run scrape showed
+    nothing at all until it finished. Piggybacks on the existing throttle
+    (every _HEARTBEAT_MIN_INTERVAL seconds) rather than writing on every
+    single transcript.add() call, which would be a DB write per page/
+    per-product during PDP enrichment."""
     now = time.monotonic()
     if log_name and (now - last_beat_at[0]) >= _HEARTBEAT_MIN_INTERVAL:
         fields = {"last_heartbeat": frappe.utils.now_datetime()}
+        if transcript is not None:
+            fields["log"] = transcript.render()
         fields.update(extra_fields)
         try:
             frappe.db.set_value("Scrape Log", log_name, fields, update_modified=False)
@@ -69,7 +78,7 @@ def _heartbeat(log_name, last_beat_at, **extra_fields):
 _ENRICH_PAGE_TIMEOUT_MS = 15_000
 
 
-def _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_id):
+def _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_id, log_name=None, last_beat_at=None):
     """PDP enrichment: sku/description/category are never present on a
     listing-grid card (confirmed against real markup -- a card only ever
     shows name/image/price), so the only way to fill them in is visiting
@@ -135,6 +144,8 @@ def _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_i
             if updates:
                 frappe.db.set_value("Scraped Product", row.name, updates)
                 enriched += 1
+            if log_name and last_beat_at is not None:
+                _heartbeat(log_name, last_beat_at, transcript=transcript)
     finally:
         try:
             page.close()
@@ -201,7 +212,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
         total_saved += saved_now
         total_already_in_db += stats.get("already_in_db", 0)
         pending_save_buffer = []
-        _heartbeat(log_name, last_beat_at, products_saved=total_saved, already_in_db=total_already_in_db)
+        _heartbeat(log_name, last_beat_at, transcript=transcript, products_saved=total_saved, already_in_db=total_already_in_db)
 
     def handle_candidate(row, listing_url_for_validation):
         nonlocal total_urls_found
@@ -427,7 +438,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             for _u, rows in paginate.iter_pages(api_url, scheme, fetch_api):
                                 for row in rows:
                                     handle_candidate(row, listing_url)
-                                _heartbeat(log_name, last_beat_at, urls_found=total_urls_found)
+                                _heartbeat(log_name, last_beat_at, transcript=transcript, urls_found=total_urls_found)
                                 reason = _pagination_break_reason()
                                 if reason:
                                     transcript.add(f"BUDGET  {reason}")
@@ -535,7 +546,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         for _page_url, rows in paginate.iter_pages(listing_url, scheme, fetch_page):
                             for row in rows:
                                 handle_candidate(row, listing_url)
-                            _heartbeat(log_name, last_beat_at, urls_found=total_urls_found)
+                            _heartbeat(log_name, last_beat_at, transcript=transcript, urls_found=total_urls_found)
                             reason = _pagination_break_reason()
                             if reason:
                                 transcript.add(f"BUDGET  {reason}")
@@ -566,7 +577,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
             # collected so far is actually in the DB for this pass to find
             # and update.
             flush_buffer()
-            _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_id)
+            _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_id, log_name, last_beat_at)
 
         except Exception as e:
             _log_error(f"Deep scraper: unexpected error ({site_name})", str(e))

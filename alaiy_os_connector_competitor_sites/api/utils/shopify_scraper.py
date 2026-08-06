@@ -95,12 +95,19 @@ def _get_with_retry(session, url):
         if r.status_code >= 500:
             time.sleep(2 * (attempt + 1))
             continue
-        # A real 4xx (other than 429) won't fix itself on retry -- log and
-        # give up immediately rather than burning the remaining attempts.
-        _log_error(
-            "Scraper: Shopify fetch got a non-retryable error",
-            f"GET {url}\nstatus={r.status_code}\nheaders={dict(r.headers)}\nbody={r.text[:1000]}",
-        )
+        # A real 4xx (other than 429) won't fix itself on retry -- give up
+        # immediately rather than burning the remaining attempts. A plain
+        # 404 is deliberately NOT logged here: this same probe IS how Tier 0
+        # detects "this isn't a Shopify store" in the first place -- most
+        # sites a general-purpose scraper touches will 404 here, every
+        # single run, by design. Logging that as an Error Log entry would
+        # spam the log on the routine, expected case. Anything else (403,
+        # 401, etc) is a genuinely unusual response worth a trace.
+        if r.status_code != 404:
+            _log_error(
+                "Scraper: Shopify fetch got a non-retryable error",
+                f"GET {url}\nstatus={r.status_code}\nheaders={dict(r.headers)}\nbody={r.text[:1000]}",
+            )
         return None
 
     if last_exc:

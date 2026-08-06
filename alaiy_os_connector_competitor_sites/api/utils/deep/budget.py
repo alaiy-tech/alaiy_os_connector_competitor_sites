@@ -9,6 +9,7 @@ these two objects so there's exactly one place that decides "keep going" vs
 """
 
 import time
+from collections import deque
 
 
 class Budget:
@@ -21,13 +22,7 @@ class Budget:
         self.start = time.monotonic()
         self.total_seconds = total_seconds
         self.reserve_seconds = reserve_seconds
-        self._page_durations = []  # rolling window, used by afford()
-
-    @classmethod
-    def unlimited(cls):
-        """0 = no time limit (used for local dev / bench execute runs where
-        you explicitly want to scrape everything, however long it takes)."""
-        return cls(total_seconds=0)
+        self._page_durations = deque(maxlen=5)  # rolling window, used by afford()
 
     def elapsed(self):
         return time.monotonic() - self.start
@@ -44,8 +39,6 @@ class Budget:
 
     def record_page_duration(self, seconds):
         self._page_durations.append(seconds)
-        if len(self._page_durations) > 5:
-            self._page_durations.pop(0)
 
     def afford_one_more_page(self):
         """Is there room for another page, given how long recent pages have

@@ -128,15 +128,11 @@ def resolve_headless_shell_path(playwright):
     correct, just heavier). Never raises — a missing/odd install shows up
     as a BrowserLaunchError at actual launch time instead."""
     try:
-        path = playwright.chromium.executable_path
-        if path and "headless_shell" in path.lower():
-            return path
-        # Playwright 1.61 exposes headless-shell as a distinct browser type
-        # in some installs; executable_path above already returns the
-        # right thing for the "chromium" channel on this box (confirmed:
-        # chromium_headless_shell-1228 is what get installed here for the
+        # Playwright's `chromium` channel already resolves to the
+        # headless-shell binary on this box's install (confirmed:
+        # chromium_headless_shell-1228 is what gets installed here for the
         # `chromium` build without the `channel="chrome"` argument).
-        return path
+        return playwright.chromium.executable_path
     except Exception:
         return None
 

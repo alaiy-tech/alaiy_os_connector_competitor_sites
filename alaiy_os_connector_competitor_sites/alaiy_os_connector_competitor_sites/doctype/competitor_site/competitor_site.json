@@ -12,9 +12,7 @@
   "is_active",
   "scrape_method",
   "deep_max_products",
-  "filter_jewelry",
-  "require_price",
-  "deep_state"
+  "filter_jewelry"
  ],
  "fields": [
   {
@@ -70,19 +68,6 @@
    "fieldtype": "Check",
    "label": "Deep: Filter To Jewelry Only",
    "description": "If the match rate across a run is very low, Deep keeps everything and logs the fact rather than silently discarding most rows — this only forces the filter on when it's actually working."
-  },
-  {
-   "default": "1",
-   "fieldname": "require_price",
-   "fieldtype": "Check",
-   "label": "Deep: Require Price"
-  },
-  {
-   "fieldname": "deep_state",
-   "fieldtype": "Long Text",
-   "label": "Deep State (internal)",
-   "hidden": 1,
-   "description": "JSON resume cursor + discovered pagination scheme. Managed by the Deep scraper — do not edit by hand."
   }
  ],
  "links": [],

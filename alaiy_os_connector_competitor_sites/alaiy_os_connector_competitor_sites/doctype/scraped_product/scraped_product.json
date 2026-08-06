@@ -16,8 +16,6 @@
   "sku",
   "categories",
   "source_price",
-  "price_amount",
-  "price_currency",
   "description",
   "scraped_at",
   "review_status",
@@ -88,18 +86,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Source Price",
-   "description": "Raw scraped price string, unmodified — always kept even if parsing into price_amount fails."
-  },
-  {
-   "fieldname": "price_amount",
-   "fieldtype": "Float",
-   "label": "Price Amount"
-  },
-  {
-   "fieldname": "price_currency",
-   "fieldtype": "Data",
-   "label": "Price Currency",
-   "length": 8
+   "description": "Raw scraped price string, unmodified."
   },
   {
    "fieldname": "description",

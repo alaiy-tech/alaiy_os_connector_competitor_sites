@@ -52,7 +52,7 @@ def detect_pagination(base_url, fetch_page):
     # Salesforce Commerce Cloud sites use — e.g. Penningtons.
     if "start" in existing_query and "sz" in existing_query:
         page_size = int(existing_query["sz"]) if str(existing_query["sz"]).isdigit() else 48
-        ok, page1_rows = _verify_offset(base_url, fetch_page, "start", 0, page_size)
+        ok, page1_rows = _verify(base_url, fetch_page, "start", 0, page_size)
         if page1_rows:
             first_page_rows = page1_rows
         if ok:
@@ -66,7 +66,7 @@ def detect_pagination(base_url, fetch_page):
     for key in ordered_keys:
         base_page = 0 if key in ("start", "offset") else 1
         step = 1
-        ok, page1_rows = _verify_numeric(base_url, fetch_page, key, base_page, step, page1_rows_cache)
+        ok, page1_rows = _verify(base_url, fetch_page, key, base_page, step, page1_rows_cache)
         if page1_rows_cache is None:
             page1_rows_cache = page1_rows
             if page1_rows:
@@ -77,31 +77,18 @@ def detect_pagination(base_url, fetch_page):
     return None, first_page_rows
 
 
-def _verify_numeric(base_url, fetch_page, key, base_page, step, page1_rows_cache):
-    page1_url = merge_query(base_url, **{key: base_page})
+def _verify(base_url, fetch_page, key, base, step, page1_rows_cache=None):
+    """Fetches page1/page2 for the given key+step and checks their row-sets
+    actually differ — shared by both the numeric-key path and the
+    start=&sz= offset special-case, which only ever differed in what values
+    they passed in, not in the check itself."""
+    page1_url = merge_query(base_url, **{key: base})
     page1_rows = page1_rows_cache if page1_rows_cache is not None else (fetch_page(page1_url) or [])
     page1_keys = _row_key_set(page1_rows)
     if not page1_keys:
         return False, page1_rows
 
-    page2_url = merge_query(base_url, **{key: base_page + step})
-    page2_rows = fetch_page(page2_url) or []
-    page2_keys = _row_key_set(page2_rows)
-    if not page2_keys:
-        return False, page1_rows
-
-    overlap = _overlap(page1_keys, page2_keys)
-    return overlap < _OVERLAP_REJECT_THRESHOLD, page1_rows
-
-
-def _verify_offset(base_url, fetch_page, key, base_start, page_size):
-    page1_url = merge_query(base_url, **{key: base_start})
-    page1_rows = fetch_page(page1_url) or []
-    page1_keys = _row_key_set(page1_rows)
-    if not page1_keys:
-        return False, page1_rows
-
-    page2_url = merge_query(base_url, **{key: base_start + page_size})
+    page2_url = merge_query(base_url, **{key: base + step})
     page2_rows = fetch_page(page2_url) or []
     page2_keys = _row_key_set(page2_rows)
     if not page2_keys:

@@ -39,7 +39,7 @@ def sync_connector_registry():
 
 def _fix_settings_as_single():
     frappe.db.sql(
-        "UPDATE `tabDocType` SET issingle=1 WHERE name='Stellar Brands Connector Settings' AND issingle=0"
+        "UPDATE `tabDocType` SET issingle=1 WHERE name='Competitor Sites Connector Settings' AND issingle=0"
     )
     frappe.db.commit()
 
@@ -84,7 +84,7 @@ def _update_alaiy_os_sidebar():
         _inject_sidebar()
     except Exception:
         frappe.log_error(
-            title="Stellar Brands connector: sidebar update failed",
+            title="Competitor Sites connector: sidebar update failed",
             message=frappe.get_traceback(),
         )
 
@@ -102,6 +102,6 @@ def _inject_sidebar():
         frappe.db.commit()
     except Exception:
         frappe.log_error(
-            title="Stellar Brands: sidebar injection failed",
+            title="Competitor Sites: sidebar injection failed",
             message=frappe.get_traceback(),
         )

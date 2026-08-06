@@ -72,8 +72,8 @@ class FirecrawlCreditsError(Exception):
 def _get_firecrawl_api_key():
     api_key = frappe.conf.get("firecrawl_api_key")
     if not api_key:
-        settings = frappe.get_single("Stellar Brands Connector Settings")
-        api_key = settings.get_password("sb_firecrawl_api_key")
+        settings = frappe.get_single("Competitor Sites Connector Settings")
+        api_key = settings.get_password("cs_firecrawl_api_key")
     if not api_key:
         frappe.throw("Firecrawl API key not set. Add firecrawl_api_key to site_config.json.")
     return api_key

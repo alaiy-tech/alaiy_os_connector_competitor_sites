@@ -6,10 +6,13 @@ import frappe
 
 def ensure_playwright_browser():
     """One-time server step for the Deep scraper (api/utils/deep/) -- installs
-    the actual chromium-headless-shell binary the `playwright` pip package
-    needs. Not wired into after_install/after_migrate: those hooks fire on
-    every full-site migrate across every installed app, and a network browser
-    download has no business running on unrelated deploys. Run once by hand:
+    the chromium-headless-shell binary the `playwright` pip package needs,
+    AND the OS shared libraries Chromium needs to actually launch (confirmed
+    missing live: `chrome-headless-shell: error while loading shared
+    libraries: libasound.so.2` on a fresh server -- the binary alone isn't
+    enough). Not wired into after_install/after_migrate: those hooks fire on
+    every full-site migrate across every installed app, and a network/apt
+    install has no business running on unrelated deploys. Run once by hand:
 
         bench execute alaiy_os_connector_competitor_sites.setup.install.ensure_playwright_browser
     """
@@ -20,6 +23,25 @@ def ensure_playwright_browser():
     if result.returncode != 0:
         frappe.throw(f"playwright install failed:\n{result.stdout}\n{result.stderr}")
     print(result.stdout)
+
+    # Needs root -- requires passwordless sudo for the deploy user (already
+    # the case for the `ubuntu` user on these servers). Not fatal if it
+    # can't run: reported clearly so the operator finishes it by hand
+    # instead of the failure surfacing later, confusingly, from inside an
+    # actual scrape run.
+    deps_result = subprocess.run(
+        ["sudo", "-n", sys.executable, "-m", "playwright", "install-deps", "chromium-headless-shell"],
+        capture_output=True, text=True,
+    )
+    if deps_result.returncode != 0:
+        print(
+            "WARNING: could not auto-install OS-level Chromium dependencies "
+            "(needs passwordless sudo for this user). Run by hand:\n"
+            "  sudo playwright install-deps chromium-headless-shell\n"
+            f"stdout: {deps_result.stdout}\nstderr: {deps_result.stderr}"
+        )
+    else:
+        print(deps_result.stdout)
 
 
 def sync_connector_registry():

@@ -170,11 +170,30 @@ def new_context(browser):
     return ctx
 
 
+_FAKE_PIXEL_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "89000000034944415478da6360000000020001e221bc330000000049454e44ae426082"
+)
+
+
 def _install_resource_blocking(context):
     def handler(route, request):
         rtype = request.resource_type
         url = request.url
         if rtype in ("image", "media", "font"):
+            # route.abort() looks like a real network failure to the page's
+            # own JS -- confirmed live: Next.js's <img> treated an aborted
+            # image request as a load error and overwrote its own real
+            # srcset/src with an error-fallback URL before extraction ever
+            # ran, so the "saved bandwidth" cost us the real image URL
+            # entirely. Fulfilling with a tiny fake image instead still
+            # avoids downloading real image bytes, but looks like a normal
+            # successful load to the page, so it never rewrites the
+            # attributes we're about to read. Image *URLs* still always
+            # come from DOM attributes (data-src/srcset), never from
+            # decoding this fake response.
+            if rtype == "image":
+                return route.fulfill(status=200, content_type="image/png", body=_FAKE_PIXEL_PNG)
             return route.abort()
         if any(host in url for host in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS):
             return route.abort()

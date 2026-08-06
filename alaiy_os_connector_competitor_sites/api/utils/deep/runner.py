@@ -252,6 +252,16 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
         transcript.add(f"TIER 0  products.json probe: {len(rows0)} candidates, {skipped0} already in db")
         for row in rows0:
             handle_candidate(row, site_url)
+        # Real gap confirmed live: handle_candidate silently stops accepting
+        # once `limit` is reached, with zero trace of how many more were
+        # actually available -- an operator watching a Scrape Log has no
+        # way to tell "that's everything" from "there's 89 more you're not
+        # seeing because of your own limit setting" without this line.
+        if limit and len(rows0) > limit:
+            transcript.add(
+                f"LIMIT  {len(rows0)} product(s) available from Tier 0, kept only {limit} "
+                f"(Competitor Site's configured max) — raise or clear it to get the rest."
+            )
     else:
         transcript.add("TIER 0  products.json probe: no results (not a Shopify store, or empty)")
 

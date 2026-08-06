@@ -13,15 +13,15 @@ polluting the DB.
 import re
 from urllib.parse import urlparse
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 from alaiy_os_connector_competitor_sites.api.utils.shopify_scraper import _is_jewelry
 
 # Paths that are almost always navigation/category/utility pages, not
 # products, unless a product marker (below) also appears in the path.
+# Word list lives in api_signatures.py alongside every other known-
+# signature list this connector uses.
 _NAV_BLOCKLIST_RE = re.compile(
-    r"/(shop|collections?|category|categories|c|browse|women|womens|men|mens|kids|"
-    r"gifts?|bottoms|tops|dresses|clothing|accessories|jewelry|jewellery|sale|"
-    r"clearance|new|new-arrivals|search|blog|about|help|faq|account|cart|checkout|"
-    r"login|pages|stores?|lookbook|size-guide|wishlist|contact)(/|$|\?)",
+    r"/(" + "|".join(api_signatures.NAV_BLOCKLIST_WORDS) + r")(/|$|\?)",
     re.IGNORECASE,
 )
 
@@ -29,22 +29,16 @@ _NAV_BLOCKLIST_RE = re.compile(
 # product page, even if a nav-blocklist word also appears earlier in it
 # (e.g. /shop/jewelry/products/gold-hoop-earrings).
 _PRODUCT_MARKER_RE = re.compile(
-    r"/(products?|prod|p|dp|item|pd)(/|$|\?)|-\d{4,}(\.html?)?(/|$|\?)",
+    r"/(" + "|".join(api_signatures.PRODUCT_MARKER_PATTERNS) + r")(/|$|\?)"
+    r"|" + api_signatures.PRODUCT_MARKER_NUMERIC_ID_PATTERN,
     re.IGNORECASE,
 )
 
-_NAV_WORD_NAMES = {
-    "new", "sale", "shop all", "view all", "see all", "back", "menu", "filter",
-    "sort", "new arrivals", "clearance", "gifts", "sign in", "my account",
-    "free shipping", "collection", "category", "lookbook", "guide",
-}
+_NAV_WORD_NAMES = set(api_signatures.NAV_WORD_NAMES)
 
 _PRICE_RE = re.compile(r"[-+]?\d[\d,.\s']*\d|\d")
 
-_JEWELRY_KEYWORD_EXTRA = [
-    "huggie", "huggies", "solitaire", "signet", "cuff", "tennis", "stud", "studs",
-    "charm bar", "choker", "chokers", "bangle", "bangles",
-]
+_JEWELRY_KEYWORD_EXTRA = api_signatures.JEWELRY_KEYWORDS_EXTENDED
 
 
 def _strip_www(host):

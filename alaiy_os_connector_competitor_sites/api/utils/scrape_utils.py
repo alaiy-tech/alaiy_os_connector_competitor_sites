@@ -446,6 +446,7 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
                 listing_urls=getattr(site_doc, "listing_urls", None),
                 limit=getattr(site_doc, "deep_max_products", None) or 0,
                 filter_jewelry=bool(getattr(site_doc, "filter_jewelry", 1)),
+                categories=getattr(site_doc, "categories", None),
             )
             method_used = "Deep"
         else:

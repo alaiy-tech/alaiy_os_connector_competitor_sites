@@ -44,6 +44,7 @@ def run_local(site_name, limit=0):
         listing_urls=site.get("listing_urls"),
         limit=limit or (site.get("deep_max_products") or 0),
         filter_jewelry=bool(site.get("filter_jewelry", 1)),
+        categories=site.get("categories"),
     )
 
     log_doc.reload()

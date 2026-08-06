@@ -10,11 +10,8 @@ wrong guess is caught after 2 requests, not after wasting the whole budget.
 
 from urllib.parse import parse_qsl, urlparse
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import merge_query, canonical_url
-
-# Checked in this order. If the configured URL already carries one of these,
-# it goes first (reusing what's already there rather than guessing).
-_CANDIDATE_KEYS = ["page", "p", "page_num", "pagenum", "start", "offset"]
 
 _OVERLAP_REJECT_THRESHOLD = 0.9  # page2 sharing >90% of page1's rows = same page, wrong key
 
@@ -58,13 +55,14 @@ def detect_pagination(base_url, fetch_page):
         if ok:
             return {"key": "start", "start": 0, "step": page_size, "page_size": page_size}, page1_rows
 
-    ordered_keys = [k for k in _CANDIDATE_KEYS if k in existing_query] + [
-        k for k in _CANDIDATE_KEYS if k not in existing_query
+    candidate_keys = api_signatures.PAGINATION_CANDIDATE_KEYS
+    ordered_keys = [k for k in candidate_keys if k in existing_query] + [
+        k for k in candidate_keys if k not in existing_query
     ]
 
     page1_rows_cache = None
     for key in ordered_keys:
-        base_page = 0 if key in ("start", "offset") else 1
+        base_page = 0 if key in api_signatures.PAGINATION_ZERO_INDEXED_KEYS else 1
         step = 1
         ok, page1_rows = _verify(base_url, fetch_page, key, base_page, step, page1_rows_cache)
         if page1_rows_cache is None:

@@ -2,15 +2,13 @@ import re
 
 import frappe
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _log_error
 
-_JEWELRY_KEYWORDS = [
-    "jewelry", "jewellery", "ring", "rings", "necklace", "necklaces",
-    "earring", "earrings", "bracelet", "bracelets", "bangle", "bangles",
-    "anklet", "anklets", "pendant", "pendants", "brooch", "brooches",
-    "chain", "chains", "charm", "charms", "cufflink", "cufflinks",
-]
-_JEWELRY_RE = re.compile(r"\b(" + "|".join(_JEWELRY_KEYWORDS) + r")\b", re.IGNORECASE)
+# Keyword list lives in api_signatures.py alongside every other known-
+# signature list this connector uses (validate.py's is_jewelry_extended
+# extends this same list further for general fashion-site categories).
+_JEWELRY_RE = re.compile(r"\b(" + "|".join(api_signatures.JEWELRY_KEYWORDS) + r")\b", re.IGNORECASE)
 
 
 def _normalize_tags(tags):

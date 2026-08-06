@@ -14,36 +14,13 @@ poison the run's counts.
 
 import re
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
+
 RATE_LIMITED = "rate_limited"
 CHALLENGE = "challenge"
 CAPTCHA = "captcha"
 GEOBLOCK = "geoblock"
 OK = "ok"
-
-_RATE_LIMIT_MARKERS = (
-    "local_rate_limited",
-    "rate limit exceeded",
-    "too many requests",
-)
-_CHALLENGE_MARKERS = (
-    "just a moment",
-    "cf-chl",
-    "checking your browser",
-    "attention required",
-    "cf-mitigated",
-)
-_CAPTCHA_MARKERS = (
-    "captcha",
-    "are you human",
-    "hcaptcha",
-    "recaptcha",
-    "verify you are human",
-)
-_GEOBLOCK_MARKERS = (
-    "not available in your country",
-    "not available in your region",
-    "shipping to your location",
-)
 
 
 def classify(html):
@@ -55,13 +32,13 @@ def classify(html):
         return OK  # empty page is handled by the caller's own "0 candidates" path
     text = html.lower()
 
-    if any(m in text for m in _RATE_LIMIT_MARKERS):
+    if any(m in text for m in api_signatures.BOT_BLOCK_RATE_LIMIT_MARKERS):
         return RATE_LIMITED
-    if any(m in text for m in _CAPTCHA_MARKERS):
+    if any(m in text for m in api_signatures.BOT_BLOCK_CAPTCHA_MARKERS):
         return CAPTCHA
-    if any(m in text for m in _CHALLENGE_MARKERS):
+    if any(m in text for m in api_signatures.BOT_BLOCK_CHALLENGE_MARKERS):
         return CHALLENGE
-    if any(m in text for m in _GEOBLOCK_MARKERS):
+    if any(m in text for m in api_signatures.BOT_BLOCK_GEOBLOCK_MARKERS):
         return GEOBLOCK
     return OK
 

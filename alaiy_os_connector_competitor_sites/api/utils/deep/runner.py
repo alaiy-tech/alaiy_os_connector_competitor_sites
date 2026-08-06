@@ -15,6 +15,7 @@ import frappe
 
 from alaiy_os_connector_competitor_sites.api.utils.deep import blocking
 from alaiy_os_connector_competitor_sites.api.utils.deep import browser as browser_mod
+from alaiy_os_connector_competitor_sites.api.utils.deep import category_finder
 from alaiy_os_connector_competitor_sites.api.utils.deep import discovery
 from alaiy_os_connector_competitor_sites.api.utils.deep import extract
 from alaiy_os_connector_competitor_sites.api.utils.deep import paginate
@@ -87,11 +88,17 @@ def _finalize(log_name, transcript, status, summary_line, saved, urls_found, alr
         frappe.logger().warning(f"deep runner: could not finalize {log_name}: {e}")
 
 
-def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None, limit=0, filter_jewelry=True):
+_MIN_ROWS_TO_VERIFY_CATEGORY = 3  # a real category page should show at least this many product-shaped rows
+
+
+def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None, limit=0,
+                 filter_jewelry=True, categories=None):
     transcript = _Transcript()
     transcript.add(f"DEEP SCRAPE  {site_url}")
 
-    listings = [u.strip() for u in (listing_urls or "").splitlines() if u.strip()] or [site_url]
+    explicit_listings = [u.strip() for u in (listing_urls or "").splitlines() if u.strip()]
+    listings = explicit_listings or [site_url]
+    category_names = [c.strip() for c in (categories or "").split(",") if c.strip()]
 
     resource_guard = ResourceGuard()
     budget = Budget(total_seconds=1500, reserve_seconds=90)
@@ -225,6 +232,51 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
 
             transcript.add(f"BROWSER  launched ok  mem_available={resource_guard.mem_available_mb()}")
             context = browser_mod.new_context(browser)
+
+            # No explicit Listing URLs configured, but category names were --
+            # find the real listing page for each one instead of requiring
+            # the operator to hand-discover and paste it. Never trusted
+            # blind: each candidate is verified by actually attempting a
+            # DOM extraction and requiring real product-shaped rows before
+            # it's accepted.
+            if not explicit_listings and category_names:
+                def _verify_listing_url(url):
+                    probe_page = context.new_page()
+                    try:
+                        probe_page.goto(url, timeout=_DOM_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+                        probe_page.wait_for_timeout(1200)
+                        rows = extract.extract_dom_cards(probe_page)
+                        valid = [r for r in rows if validate_row(r, url)[0]]
+                        return len(valid) >= _MIN_ROWS_TO_VERIFY_CATEGORY
+                    except Exception:
+                        return False
+                    finally:
+                        try:
+                            probe_page.close()
+                        except Exception:
+                            pass
+
+                resolved = []
+                finder_page = context.new_page()
+                try:
+                    for category_name in category_names:
+                        url = category_finder.find_category_listing_url(
+                            finder_page, site_url, category_name, _verify_listing_url)
+                        if url:
+                            transcript.add(f"CATEGORY  '{category_name}' -> {url}")
+                            resolved.append(url)
+                        else:
+                            transcript.add(f"CATEGORY  '{category_name}' -> no matching listing page found")
+                finally:
+                    try:
+                        finder_page.close()
+                    except Exception:
+                        pass
+
+                if resolved:
+                    listings = resolved
+                else:
+                    transcript.add("CATEGORY  none resolved -- falling back to the bare site URL.")
 
             pages_fetched = 0
             for listing_url in listings:

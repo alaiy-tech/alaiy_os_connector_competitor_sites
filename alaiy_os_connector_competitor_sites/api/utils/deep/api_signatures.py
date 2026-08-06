@@ -1,10 +1,14 @@
-"""Known API-kind signatures for classify_api_kind() (discovery.py) --
-kept in its own file, separate from the discovery logic, so this list can
-grow as more sites get scraped without touching the walker/scorer code.
+"""Known signatures used across the Deep scraper's discovery/extraction
+tiers -- API-kind markers, tracker hosts, SSR framework globals, and the
+fuzzy product-field key vocabulary. Kept in its own file, separate from
+the walking/scoring/extraction logic in discovery.py and extract.py, so
+this data can grow as more sites get scraped without touching that code.
 Nothing here is specific to any one site -- these are real, widely-used
-commerce infrastructure vendors, not a hardcoded fix for a single test run.
+commerce infrastructure vendors and framework conventions, not a
+hardcoded fix for a single test run.
 
-Adding a new vendor is just adding a marker string to the right tuple below.
+Adding a new vendor/framework is just adding a marker string to the right
+tuple below.
 """
 
 # Hosted search-as-a-service platforms commonly powering an e-commerce
@@ -101,3 +105,167 @@ PRODUCT_KEY_HINTS = {
         "breadcrumb", "taxon",
     ),
 }
+
+# Known window globals SSR frameworks/libraries use to embed their initial
+# payload (extract.py's extract_embedded_json). Every name here is a
+# standard hydration-state convention used across every site built on
+# that framework, not something any one site invented. Deliberately broad:
+# cheap to check (one property read each), and missing a real one just
+# means falling through to the next tier.
+EMBEDDED_JSON_GLOBALS = (
+    "__NEXT_DATA__",              # Next.js
+    "__NUXT__",                    # Nuxt 2
+    "__NUXT_DATA__",                # Nuxt 3
+    "__INITIAL_STATE__",            # common bespoke SSR convention
+    "__INITIAL_STATE",              # same, no trailing underscore variant
+    "INITIAL_STATE",                # same, no underscores at all
+    "__PRELOADED_STATE__",          # common Redux SSR convention
+    "__REDUX_STATE__",              # Redux SSR (alternate naming)
+    "__REDUX_DATA__",               # Redux SSR (alternate naming)
+    "__APOLLO_STATE__",             # Apollo Client cache dehydration
+    "__APOLLO_CLIENT__",            # Apollo Client cache, alternate naming
+    "__RELAY_PAYLOADS__",           # Relay (Facebook GraphQL client)
+    "__RELAY_STORE__",              # Relay, alternate naming
+    "__TRANSFER_STATE__",           # Angular Universal
+    "__remixContext",               # Remix / Shopify Hydrogen v2
+    "__PAGE_DATA__",                 # common bespoke SSR convention
+    "__SERVER_DATA__",               # common bespoke SSR convention
+    "__STATE__",                     # common bespoke SSR convention
+    "__DATA__",                      # common bespoke SSR convention
+    "__APP_STATE__",                 # common bespoke SSR convention
+    "__INITIAL_DATA__",              # common bespoke SSR convention
+    "__PRELOADED_DATA__",            # common bespoke SSR convention
+    "__SSR_DATA__",                  # common bespoke SSR convention
+    "__vite_ssr_import_meta__",      # rare, but seen on some Vite-SSR sites
+)
+
+# Script tag MIME types treated specially -- JSON-LD gets its own dedicated
+# extractor (extract.py's extract_json_ld) since it has a known Product/
+# ItemList shape; extract_embedded_json's generic script-tag scan excludes
+# this type so the two extractors never double-process the same tag.
+JSON_LD_SCRIPT_TYPE = "application/ld+json"
+
+# Bot-block/rate-limit page-body markers (blocking.py's classify()).
+# Confirmed necessary by direct evidence: a real test run against the same
+# URL alternated between finding real products and finding 0, and the
+# 0-result pages turned out to be the storefront's own rate-limit response
+# body, not a rendering race. Checked narrowest-signal first regardless.
+BOT_BLOCK_RATE_LIMIT_MARKERS = (
+    "local_rate_limited",
+    "rate limit exceeded",
+    "too many requests",
+)
+BOT_BLOCK_CHALLENGE_MARKERS = (
+    "just a moment",
+    "cf-chl",
+    "checking your browser",
+    "attention required",
+    "cf-mitigated",
+)
+BOT_BLOCK_CAPTCHA_MARKERS = (
+    "captcha",
+    "are you human",
+    "hcaptcha",
+    "recaptcha",
+    "verify you are human",
+)
+BOT_BLOCK_GEOBLOCK_MARKERS = (
+    "not available in your country",
+    "not available in your region",
+    "shipping to your location",
+)
+
+# Pagination query-param keys to try, in order (paginate.py's
+# detect_pagination). If the configured URL already carries one of these,
+# it's tried first -- reusing what's already there rather than guessing.
+# Every guess is verified (page1 vs page2 must actually differ) before
+# being trusted, so a broad list costs a couple of extra HTTP round trips
+# per wrong guess, never a wrong result -- worth erring toward more keys.
+PAGINATION_CANDIDATE_KEYS = (
+    "page", "p", "pg", "pn",
+    "page_num", "pagenum", "page_no", "pageno", "pagenumber",
+    "currentpage", "current_page",
+    "start", "offset", "from", "skip", "index",
+    "startindex", "start_index", "rownum",
+)
+# 0-indexed-by-convention keys -- these paginate from record 0, not page 1.
+PAGINATION_ZERO_INDEXED_KEYS = ("start", "offset", "from", "skip", "index", "startindex", "start_index", "rownum")
+
+# URL path segments that are almost always navigation/category/utility
+# pages, not products (validate.py's validate_row), unless a product marker
+# (below) also appears in the same path.
+NAV_BLOCKLIST_WORDS = (
+    "shop", "collections?", "category", "categories", "c", "browse",
+    "women", "womens", "men", "mens", "kids", "gifts?", "bottoms", "tops",
+    "dresses", "clothing", "accessories", "jewelry", "jewellery", "sale",
+    "clearance", "new", "new-arrivals", "search", "blog", "about", "help",
+    "faq", "account", "cart", "checkout", "login", "pages", "stores?",
+    "lookbook", "size-guide", "wishlist", "contact",
+)
+# Any of these appearing in a path is a strong positive signal it IS a
+# product page, even if a nav-blocklist word also appears earlier in it.
+PRODUCT_MARKER_PATTERNS = (r"products?", r"prod", r"p", r"dp", r"item", r"pd")
+# A trailing numeric id 4+ digits long is also a strong product-page signal,
+# independent of any path-segment word (validate.py builds this separately
+# since it's a different pattern shape, not a plain word alternation).
+PRODUCT_MARKER_NUMERIC_ID_PATTERN = r"-\d{4,}(\.html?)?(/|$|\?)"
+
+# Plain link-text words that are never a real product name (validate.py).
+NAV_WORD_NAMES = (
+    "new", "sale", "shop all", "view all", "see all", "back", "menu", "filter",
+    "sort", "new arrivals", "clearance", "gifts", "sign in", "my account",
+    "free shipping", "collection", "category", "lookbook", "guide",
+)
+
+# Base jewelry-category keywords (shopify_scraper.py's _is_jewelry) plus the
+# extended vocabulary (validate.py's is_jewelry_extended) that under-collects
+# on general fashion sites' jewelry categories if left out.
+JEWELRY_KEYWORDS = (
+    "jewelry", "jewellery", "ring", "rings", "necklace", "necklaces",
+    "earring", "earrings", "bracelet", "bracelets", "bangle", "bangles",
+    "anklet", "anklets", "pendant", "pendants", "brooch", "brooches",
+    "chain", "chains", "charm", "charms", "cufflink", "cufflinks",
+)
+JEWELRY_KEYWORDS_EXTENDED = (
+    "huggie", "huggies", "solitaire", "signet", "cuff", "tennis", "stud", "studs",
+    "charm bar", "choker", "chokers", "bangle", "bangles",
+)
+
+# Category-listing URL path conventions across major e-commerce platforms,
+# themes, and common non-English naming (category_finder.py's fallback,
+# tried only after real nav-link matching, and every candidate is still
+# verified against real content before use -- a broad guess list costs
+# nothing but a few extra page loads on a wrong guess).
+CATEGORY_PATH_TEMPLATES = (
+    "/collections/{slug}",                  # Shopify
+    "/collection/{slug}",                   # Shopify, singular variant
+    "/category/{slug}",                     # generic / many bespoke themes
+    "/categories/{slug}",                   # generic
+    "/c/{slug}",                             # common short form
+    "/shop/{slug}",                          # common short form
+    "/shop/category/{slug}",                 # common compound form
+    "/shop-by-category/{slug}",              # common compound form
+    "/store/category/{slug}",                # confirmed live on a real Next.js storefront
+    "/store/{slug}",                         # generic
+    "/product-category/{slug}",              # WooCommerce
+    "/catalog/category/view/s/{slug}",       # Magento (default URL key style)
+    "/catalog/{slug}",                       # generic catalog-style
+    "/catalogsearch/category/{slug}",        # Magento search-driven category
+    "/s/{slug}",                             # BigCommerce-style short form
+    "/browse/{slug}",                        # generic
+    "/department/{slug}",                    # generic department-style nav
+    "/list/{slug}",                          # generic
+    "/search/{slug}",                        # generic
+    "/p/{slug}",                             # some bespoke themes use this for category too
+    "/boutique/{slug}",                      # French-language storefronts
+    "/categorie/{slug}",                     # French spelling
+    "/kategorie/{slug}",                     # German spelling
+    "/categoria/{slug}",                     # Spanish/Italian spelling
+    "/rayon/{slug}",                         # French department-store convention
+    "/{slug}",                               # bare top-level path, last resort
+    "?cgid={slug}",                          # Salesforce Commerce Cloud category id
+    "?cid={slug}",                           # common category-id query param
+    "?cat={slug}",                           # Magento-style category id
+    "?category_id={slug}",                  # generic
+    "?category={slug}",                     # generic
+)

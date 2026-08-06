@@ -14,19 +14,17 @@ fetch_page(url) -> rows callable -- they don't care whether that callable
 hits DOM or a JSON API underneath).
 
 No site-specific field names anywhere here -- every mapping is generic
-fuzzy key-matching, same discipline as validate.py's approach.
+fuzzy key-matching (vocabulary lives in api_signatures.py, same discipline
+as validate.py's approach), works whether the underlying API is REST,
+GraphQL, a hosted search index, or anything else that returns JSON.
 """
 
 import re
 from urllib.parse import urljoin
 
-_PRODUCT_KEY_HINTS = {
-    "name": ("name", "title", "productname", "displayname"),
-    "url": ("url", "link", "producturl", "canonicalurl", "slug", "handle"),
-    "image": ("image", "imageurl", "thumbnail", "img", "media"),
-    "price": ("price", "currentprice", "saleprice", "listprice", "amount"),
-    "sku": ("sku", "id", "productid", "styleid", "itemid"),
-}
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
+
+_PRODUCT_KEY_HINTS = api_signatures.PRODUCT_KEY_HINTS
 
 _MIN_SCORE = 2  # an array of dicts needs to touch >=2 product-field categories to count
 _MAX_RESPONSES_SCANNED = 60  # safety cap -- a chatty page can fire far more XHR than we need to check
@@ -58,28 +56,80 @@ def _find_arrays(obj, path=""):
             yield from _find_arrays(v, f"{path}.{k}" if path else k)
 
 
+_MAX_UNWRAP_KEYS = 3  # only unwrap a thin wrapper dict (edges/node-shaped), not a rich object
+                       # that happens to have a nested dict field
+
+
+def _best_row_shape(item):
+    """A GraphQL "edges" array's items look like {"node": {...}, "cursor": ...}
+    -- the real product fields sit one level inside "node", not on the edge
+    dict itself, so scoring the edge dict directly finds nothing even though
+    real data is right there. Returns (unwrap_key, score) for whichever shape
+    (the item itself, or a nested dict inside a thin wrapper) scores best."""
+    best_key, best_score = None, _score_dict_keys(item)
+    if len(item) <= _MAX_UNWRAP_KEYS:
+        for k, v in item.items():
+            if isinstance(v, dict):
+                score = _score_dict_keys(v)
+                if score > best_score:
+                    best_key, best_score = k, score
+    return best_key, best_score
+
+
 def best_product_array(json_obj):
-    """Returns (path, array, score) for the array in this JSON tree that
-    looks most like a product list, or None if nothing scores >= _MIN_SCORE.
-    Prefers a higher score, then a longer array, on ties."""
+    """Returns (path, unwrap_key, array, score) for the array in this JSON
+    tree that looks most like a product list, or None if nothing scores
+    >= _MIN_SCORE. unwrap_key is set when the real fields sit one level
+    inside each array item (GraphQL edges/node and similar thin wrappers),
+    None when the item itself is the row shape. Prefers a higher score, then
+    a longer array, on ties."""
     best = None
     for path, arr in _find_arrays(json_obj):
         if len(arr) < 2 or not isinstance(arr[0], dict):
             continue
-        score = _score_dict_keys(arr[0])
+        unwrap_key, score = _best_row_shape(arr[0])
         if score < _MIN_SCORE:
             continue
-        if best is None or score > best[2] or (score == best[2] and len(arr) > len(best[1])):
-            best = (path, arr, score)
+        if best is None or score > best[3] or (score == best[3] and len(arr) > len(best[2])):
+            best = (path, unwrap_key, arr, score)
     return best
+
+
+def classify_api_kind(request):
+    """Best-effort request classification against known signatures in
+    api_signatures.py -- purely observational (surfaced in the Scrape Log so
+    an operator can see what each site is actually running), never gates
+    extraction: best_product_array walks the response tree the same way
+    regardless of what kind of API produced it. Add a new vendor/framework
+    by extending api_signatures.py, not this function."""
+    try:
+        url = (request.url or "").lower()
+        headers = {k.lower(): v for k, v in (request.headers or {}).items()}
+
+        if any(marker in url for marker in api_signatures.SEARCH_INDEX_HOST_MARKERS):
+            return "Search-index"
+        if any(m in headers for m in api_signatures.FRAMEWORK_ACTION_HEADER_MARKERS):
+            return "Framework Server Action"
+        if any(m in headers.get("content-type", "") for m in api_signatures.FRAMEWORK_ACTION_CONTENT_TYPE_MARKERS):
+            return "Framework Server Action"
+        if any(marker in url for marker in api_signatures.GRAPHQL_URL_MARKERS):
+            return "GraphQL"
+        if request.method == "POST":
+            body = (request.post_data or "")[:500].lower()
+            if any(marker in body for marker in api_signatures.GRAPHQL_BODY_MARKERS):
+                return "GraphQL"
+        return "REST"
+    except Exception:
+        return "unknown"
 
 
 def capture_best_api_candidate(page, listing_url, wait_ms=6000):
     """Navigates page to listing_url with a response listener attached, and
-    returns (response_url, array_path, score) for the single best-scoring
-    product array seen across every JSON XHR/fetch response during load --
-    or None if nothing usable turned up. Caller is responsible for the page
-    already being at rest afterward (this does its own goto)."""
+    returns (response_url, array_path, unwrap_key, score, api_kind) for the
+    single best-scoring product array seen across every JSON XHR/fetch
+    response during load -- or None if nothing usable turned up. Caller is
+    responsible for the page already being at rest afterward (this does its
+    own goto)."""
     candidates = []
     scanned = 0
 
@@ -99,8 +149,9 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
             return
         found = best_product_array(body)
         if found:
-            path, arr, score = found
-            candidates.append((response.url, path, len(arr), score))
+            path, unwrap_key, arr, score = found
+            kind = classify_api_kind(response.request)
+            candidates.append((response.url, path, unwrap_key, len(arr), score, kind))
 
     page.on("response", on_response)
     try:
@@ -116,9 +167,9 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
 
     if not candidates:
         return None
-    candidates.sort(key=lambda c: (c[3], c[2]), reverse=True)
-    url, path, _count, score = candidates[0]
-    return url, path, score
+    candidates.sort(key=lambda c: (c[4], c[3]), reverse=True)
+    url, path, unwrap_key, _count, score, kind = candidates[0]
+    return url, path, unwrap_key, score, kind
 
 
 _PATH_PART_RE = re.compile(r"[^.\[\]]+|\[\d+\]")
@@ -141,12 +192,19 @@ def walk_json_path(obj, path):
     return node
 
 
-def map_generic_row(item, base_url):
+def map_generic_row(item, base_url, unwrap_key=None):
     """Best-effort mapping of an arbitrary product-API dict to our canonical
     row shape via fuzzy key matching -- no site-specific field names. Returns
-    None if the item doesn't even carry a name+url (not a real product row)."""
+    None if the item doesn't even carry a name+url (not a real product row).
+    unwrap_key: for GraphQL edges/node-shaped arrays, the key (usually "node")
+    whose value is the actual product dict -- resolved once in discovery and
+    reused here so every row unwraps consistently."""
     if not isinstance(item, dict):
         return None
+    if unwrap_key:
+        item = item.get(unwrap_key)
+        if not isinstance(item, dict):
+            return None
 
     def find(hints):
         for k, v in item.items():
@@ -181,7 +239,7 @@ def map_generic_row(item, base_url):
     }
 
 
-def fetch_api_page(page, api_url, array_path):
+def fetch_api_page(page, api_url, array_path, unwrap_key=None):
     """Fetches api_url via an IN-PAGE fetch() call (page.evaluate), not a
     separate requests.Session -- this preserves the exact cookie/TLS/header
     fingerprint the site's own browser session already has, avoiding the
@@ -201,5 +259,5 @@ def fetch_api_page(page, api_url, array_path):
     if not isinstance(arr, list):
         return []
 
-    rows = [map_generic_row(item, api_url) for item in arr]
+    rows = [map_generic_row(item, api_url, unwrap_key) for item in arr]
     return [r for r in rows if r]

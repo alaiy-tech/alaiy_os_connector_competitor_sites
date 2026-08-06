@@ -264,13 +264,16 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         transcript.add(f"  TIER 1  API discovery failed: {e}")
 
                     if api_candidate:
-                        api_url, array_path, score = api_candidate
-                        transcript.add(f"TIER 1  API discovered  {api_url}  (path={array_path!r}, score={score})")
+                        api_url, array_path, unwrap_key, score, api_kind = api_candidate
+                        transcript.add(
+                            f"TIER 1  API discovered ({api_kind})  {api_url}  "
+                            f"(path={array_path!r}, unwrap={unwrap_key!r}, score={score})"
+                        )
 
                         def fetch_api(url):
                             nonlocal pages_fetched
                             t0 = time.monotonic()
-                            rows = discovery.fetch_api_page(page, url, array_path)
+                            rows = discovery.fetch_api_page(page, url, array_path, unwrap_key)
                             pages_fetched += 1
                             budget.record_page_duration(time.monotonic() - t0)
                             transcript.add(f"  API {url}  {len(rows)} candidates")

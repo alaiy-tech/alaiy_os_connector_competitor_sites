@@ -1,4 +1,25 @@
+import subprocess
+import sys
+
 import frappe
+
+
+def ensure_playwright_browser():
+    """One-time server step for the Deep scraper (api/utils/deep/) -- installs
+    the actual chromium-headless-shell binary the `playwright` pip package
+    needs. Not wired into after_install/after_migrate: those hooks fire on
+    every full-site migrate across every installed app, and a network browser
+    download has no business running on unrelated deploys. Run once by hand:
+
+        bench execute alaiy_os_connector_competitor_sites.setup.install.ensure_playwright_browser
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium-headless-shell"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        frappe.throw(f"playwright install failed:\n{result.stdout}\n{result.stderr}")
+    print(result.stdout)
 
 
 def sync_connector_registry():

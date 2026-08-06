@@ -11,6 +11,8 @@ dependencies = [
     # "frappe~=15.0.0" # Installed and managed by bench.
     "firecrawl-py",
     "Pillow",
+    "playwright", # Deep scraper (api/utils/deep/) -- also needs the browser binary:
+                  # `bench execute alaiy_os_connector_competitor_sites.setup.install.ensure_playwright_browser`
 ]
 
 [build-system]

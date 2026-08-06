@@ -140,6 +140,15 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
         try:
             if response.request.resource_type not in ("xhr", "fetch"):
                 return
+            url_lower = response.url.lower()
+            if any(m in url_lower for m in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS):
+                # Never even score these -- confirmed live: Adobe's
+                # demdex.net analytics beacon scored 2 on Chico's own
+                # traffic and got picked over the real catalog API.
+                # browser.py's request-blocking should already stop most
+                # of these before a response even completes; this is
+                # defense in depth against anything that slips through.
+                return
             ctype = response.headers.get("content-type", "")
             if "json" not in ctype:
                 return

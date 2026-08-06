@@ -44,6 +44,28 @@ FRAMEWORK_ACTION_CONTENT_TYPE_MARKERS = (
 GRAPHQL_URL_MARKERS = ("graphql",)
 GRAPHQL_BODY_MARKERS = ('"query"', "mutation ", "query ")
 
+# Analytics/martech/ad-tech hosts -- never real product data even when a
+# response coincidentally touches a couple of product-field-hint categories
+# (confirmed live: Adobe Experience Platform's demdex.net "interact" beacon
+# scored 2 on Chico's own traffic and got picked over -- and instead of --
+# the real catalog API). Used two ways: browser.py aborts requests to these
+# hosts outright (saves bandwidth/memory, never loses image URLs since those
+# come from DOM attributes, not fetched bytes), and discovery.py refuses to
+# even score a response from one of these, regardless of what it contains.
+ANALYTICS_TRACKER_HOST_MARKERS = (
+    "google-analytics.com", "googletagmanager.com", "doubleclick.net",
+    "facebook.net", "facebook.com/tr", "hotjar.com", "segment.com",
+    "segment.io", "optimizely.com", "criteo.com", "criteo.net", "taboola.com",
+    "newrelic.com", "datadoghq.com", "cdn.cookielaw.org", "klaviyo.com",
+    "bat.bing.com", "snap.com", "pinterest.com", "yotpo.com",
+    "bazaarvoice.com", "mparticle.com",
+    "demdex.net", "adobedc.net", "omtrdc.net", "adobedtm.com",
+    "everesttech.net", "rlcdn.com", "adnxs.com", "rubiconproject.com",
+    "pubmatic.com", "quantserve.com", "scorecardresearch.com",
+    "fullstory.com", "amplitude.com", "mixpanel.com", "dynatrace.com",
+    "onetrust.com", "clarity.ms", "tealiumiq.com",
+)
+
 # Fuzzy key-name vocabulary for mapping an arbitrary product-API dict to our
 # canonical row shape (discovery.py's map_generic_row) -- deliberately broad
 # across the field names real commerce APIs actually use (Shopify Storefront

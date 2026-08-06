@@ -22,19 +22,12 @@ import signal
 
 import frappe
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
+
 _REDIS_SLOT_KEY = "deep_scrape:browser_slot"
 _REDIS_BROKEN_KEY = "deep_scrape:browser_broken"
 _SLOT_TTL_SECONDS = 180
 _BROKEN_TTL_SECONDS = 300
-
-_TRACKER_HOST_SUBSTRINGS = (
-    "google-analytics.com", "googletagmanager.com", "doubleclick.net",
-    "facebook.net", "facebook.com/tr", "hotjar.com", "segment.com",
-    "segment.io", "optimizely.com", "criteo.com", "taboola.com",
-    "newrelic.com", "datadoghq.com", "cdn.cookielaw.org", "klaviyo.com",
-    "bat.bing.com", "snap.com", "pinterest.com", "yotpo.com",
-    "bazaarvoice.com", "mparticle.com",
-)
 
 _LAUNCH_ARGS = [
     "--no-sandbox",
@@ -183,7 +176,7 @@ def _install_resource_blocking(context):
         url = request.url
         if rtype in ("image", "media", "font"):
             return route.abort()
-        if any(host in url for host in _TRACKER_HOST_SUBSTRINGS):
+        if any(host in url for host in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS):
             return route.abort()
         return route.continue_()
 

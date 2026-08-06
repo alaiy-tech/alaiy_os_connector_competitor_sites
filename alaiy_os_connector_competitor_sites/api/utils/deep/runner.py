@@ -330,8 +330,21 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         if block != blocking.OK:
                             return [], block, html
 
-                        rows = extract.extract_json_ld(html)
-                        source = "json-ld"
+                        # Tier 2a first -- an SSR framework's own embedded
+                        # state (Next.js __NEXT_DATA__ and similar) is
+                        # usually more complete/structured than JSON-LD, and
+                        # is the ONLY tier that can find a product list that
+                        # was server-rendered directly into the page, never
+                        # fetched via a client-visible XHR at all (which is
+                        # exactly why tier 1's network intercept can come up
+                        # empty on some real SSR sites).
+                        rows = extract.extract_embedded_json(page, url)
+                        source = "embedded-json"
+                        if len(rows) < 3:
+                            ld_rows = extract.extract_json_ld(html)
+                            if len(ld_rows) > len(rows):
+                                rows = ld_rows
+                                source = "json-ld"
                         if len(rows) < 3:
                             dom_rows = extract.extract_dom_cards(page)
                             if len(dom_rows) > len(rows):

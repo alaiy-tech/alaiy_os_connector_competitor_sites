@@ -1,19 +1,23 @@
 """Product extraction, cheapest-first:
 
-  tier 0 — products.json probe (no browser at all): reuses the existing
-           Shopify scraper, since a meaningful fraction of "unknown" sites
-           turn out to be Shopify stores under a different domain.
-  tier 2 — JSON-LD embedded in the page HTML (Product / ItemList schema.org)
-  tier 3 — generic DOM card extraction: every <a href> that wraps an <img>
-           and has price-like text nearby, which is what a product grid
-           tile looks like on virtually every storefront regardless of
-           framework (Salesforce Commerce Cloud, Magento, bespoke themes).
-
-(Tier 1 — discovering and replaying a site's own XHR/JSON API — is the
-highest-value tier for JS-heavy SPAs like ASOS/Anthropologie, but is not
-implemented in this pass; sites that need it fall through to tier 3's DOM
-extraction, which still works on anything that renders, just less
-precisely. This is a known, deliberate scope cut — see pradyun-scraper-plan.md.)
+  tier 0  — products.json probe (no browser at all): reuses the existing
+            Shopify scraper, since a meaningful fraction of "unknown" sites
+            turn out to be Shopify stores under a different domain.
+  tier 1  — discover and replay the page's own JSON API (deep/discovery.py) --
+            handled by runner.py before this module's tiers run at all.
+  tier 2a — embedded SSR state: many frameworks embed the whole initial
+            payload as a window global (Next.js's __NEXT_DATA__, Nuxt's
+            __NUXT__, or a bespoke __INITIAL_STATE__/__PRELOADED_STATE__/
+            Apollo/Redux store) rather than fetching it via a client-visible
+            XHR/fetch call at all -- confirmed live: tier 1's network
+            intercept found nothing on a real Next.js listing page because
+            the product grid was server-rendered directly into the initial
+            payload, never fetched client-side.
+  tier 2b — JSON-LD embedded in the page HTML (Product / ItemList schema.org)
+  tier 3  — generic DOM card extraction: every <a href> that wraps an <img>
+            and has price-like text nearby, which is what a product grid
+            tile looks like on virtually every storefront regardless of
+            framework (Salesforce Commerce Cloud, Magento, bespoke themes).
 """
 
 import json
@@ -35,6 +39,50 @@ def try_products_json(site_url, skip_urls=None):
         return rows, skipped
     except Exception:
         return [], 0
+
+
+# Known window globals SSR frameworks use to embed their initial payload.
+# Not site-specific -- these are the standard hydration-state names each
+# framework/library uses across every site built on it.
+_EMBEDDED_JSON_GLOBALS = (
+    "__NEXT_DATA__",       # Next.js
+    "__NUXT__",            # Nuxt
+    "__INITIAL_STATE__",   # common bespoke SSR convention
+    "__PRELOADED_STATE__", # common Redux SSR convention
+    "__APOLLO_STATE__",    # Apollo Client cache dehydration
+    "__REDUX_STATE__",     # Redux SSR (alternate naming)
+)
+
+
+def extract_embedded_json(page, base_url):
+    """Tier 2a. Reads each known SSR-framework window global, and for
+    whichever one exists, reuses discovery.py's generic array-scoring and
+    row-mapping to find and map the product list inside it -- same "find
+    the product array in a JSON blob" problem whether that blob came from
+    a network response (tier 1) or a window global (here), so no separate
+    scoring logic needed. Returns [] if none of the globals exist or none
+    of them score as containing a product list."""
+    from alaiy_os_connector_competitor_sites.api.utils.deep import discovery
+
+    for name in _EMBEDDED_JSON_GLOBALS:
+        try:
+            data = page.evaluate(f"() => window.{name} || null")
+        except Exception:
+            data = None
+        if not data:
+            continue
+
+        found = discovery.best_product_array(data)
+        if not found:
+            continue
+
+        _path, unwrap_key, arr, _score = found
+        rows = [discovery.map_generic_row(item, base_url, unwrap_key) for item in arr]
+        rows = [r for r in rows if r]
+        if rows:
+            return rows
+
+    return []
 
 
 def _flatten_ld_json(obj):

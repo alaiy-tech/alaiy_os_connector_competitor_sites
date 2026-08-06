@@ -41,44 +41,100 @@ def try_products_json(site_url, skip_urls=None):
         return [], 0
 
 
-# Known window globals SSR frameworks use to embed their initial payload.
-# Not site-specific -- these are the standard hydration-state names each
-# framework/library uses across every site built on it.
+# Known window globals SSR frameworks/libraries use to embed their initial
+# payload. Not site-specific -- every name here is a standard hydration-state
+# convention used across every site built on that framework, not something
+# any one site invented. Deliberately broad: cheap to check (one property
+# read each), and missing a real one just means falling through to the
+# next tier.
 _EMBEDDED_JSON_GLOBALS = (
-    "__NEXT_DATA__",       # Next.js
-    "__NUXT__",            # Nuxt
-    "__INITIAL_STATE__",   # common bespoke SSR convention
-    "__PRELOADED_STATE__", # common Redux SSR convention
-    "__APOLLO_STATE__",    # Apollo Client cache dehydration
-    "__REDUX_STATE__",     # Redux SSR (alternate naming)
+    "__NEXT_DATA__",              # Next.js
+    "__NUXT__",                   # Nuxt 2
+    "__NUXT_DATA__",               # Nuxt 3
+    "__INITIAL_STATE__",           # common bespoke SSR convention
+    "__INITIAL_STATE",             # same, no trailing underscore variant
+    "INITIAL_STATE",               # same, no underscores at all
+    "__PRELOADED_STATE__",         # common Redux SSR convention
+    "__REDUX_STATE__",             # Redux SSR (alternate naming)
+    "__REDUX_DATA__",              # Redux SSR (alternate naming)
+    "__APOLLO_STATE__",            # Apollo Client cache dehydration
+    "__APOLLO_CLIENT__",           # Apollo Client cache, alternate naming
+    "__RELAY_PAYLOADS__",          # Relay (Facebook GraphQL client)
+    "__RELAY_STORE__",             # Relay, alternate naming
+    "__TRANSFER_STATE__",          # Angular Universal
+    "__remixContext",              # Remix / Shopify Hydrogen v2
+    "__PAGE_DATA__",                # common bespoke SSR convention
+    "__SERVER_DATA__",              # common bespoke SSR convention
+    "__STATE__",                    # common bespoke SSR convention
+    "__DATA__",                     # common bespoke SSR convention
+    "__APP_STATE__",                # common bespoke SSR convention
+    "__INITIAL_DATA__",             # common bespoke SSR convention
+    "__PRELOADED_DATA__",           # common bespoke SSR convention
+    "__SSR_DATA__",                 # common bespoke SSR convention
+    "__vite_ssr_import_meta__",     # rare, but seen on some Vite-SSR sites
 )
+
+# CSS selector for every JSON <script> tag that ISN'T JSON-LD (that one has
+# its own dedicated extractor, extract_json_ld, since it has a known
+# Product/ItemList shape). Catches frameworks that embed state via a JSON
+# script tag under a bespoke id/type rather than a documented window
+# global -- Nuxt 3's __NUXT_DATA__ payload, SvelteKit's fetched-data
+# blocks, Qwik's state block, and any other bespoke convention this list
+# doesn't happen to name.
+_OTHER_JSON_SCRIPT_TAGS_JS = r"""
+() => {
+  const out = [];
+  for (const el of document.querySelectorAll('script[type="application/json"]')) {
+    if ((el.type || '').toLowerCase() === 'application/ld+json') continue;
+    const text = el.textContent;
+    if (text && text.trim()) out.push(text);
+  }
+  return out;
+}
+"""
 
 
 def extract_embedded_json(page, base_url):
-    """Tier 2a. Reads each known SSR-framework window global, and for
-    whichever one exists, reuses discovery.py's generic array-scoring and
-    row-mapping to find and map the product list inside it -- same "find
-    the product array in a JSON blob" problem whether that blob came from
-    a network response (tier 1) or a window global (here), so no separate
-    scoring logic needed. Returns [] if none of the globals exist or none
-    of them score as containing a product list."""
+    """Tier 2a. Reads every known SSR-framework window global, then every
+    other non-JSON-LD JSON <script> tag on the page, and for whichever one
+    exists, reuses discovery.py's generic array-scoring and row-mapping to
+    find and map the product list inside it -- same "find the product
+    array in a JSON blob" problem whether that blob came from a network
+    response (tier 1) or an embedded payload (here), so no separate scoring
+    logic needed. Returns [] if nothing found scores as containing a
+    product list. Returns on the FIRST source that yields real rows --
+    doesn't keep scanning once one candidate works."""
     from alaiy_os_connector_competitor_sites.api.utils.deep import discovery
+
+    def _try(data):
+        if not data:
+            return []
+        found = discovery.best_product_array(data)
+        if not found:
+            return []
+        _path, unwrap_key, arr, _score = found
+        rows = [discovery.map_generic_row(item, base_url, unwrap_key) for item in arr]
+        return [r for r in rows if r]
 
     for name in _EMBEDDED_JSON_GLOBALS:
         try:
             data = page.evaluate(f"() => window.{name} || null")
         except Exception:
             data = None
-        if not data:
-            continue
+        rows = _try(data)
+        if rows:
+            return rows
 
-        found = discovery.best_product_array(data)
-        if not found:
+    try:
+        script_texts = page.evaluate(_OTHER_JSON_SCRIPT_TAGS_JS) or []
+    except Exception:
+        script_texts = []
+    for text in script_texts:
+        try:
+            data = json.loads(text)
+        except (ValueError, TypeError):
             continue
-
-        _path, unwrap_key, arr, _score = found
-        rows = [discovery.map_generic_row(item, base_url, unwrap_key) for item in arr]
-        rows = [r for r in rows if r]
+        rows = _try(data)
         if rows:
             return rows
 

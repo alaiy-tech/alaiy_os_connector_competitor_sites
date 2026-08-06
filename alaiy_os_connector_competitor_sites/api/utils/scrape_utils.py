@@ -424,11 +424,16 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
             "Scraped Product", filters={"source_site": site_name}, pluck="source_product_url"
         ))
 
+        site_doc = frappe.get_doc("Competitor Site", site_name)
+        filter_jewelry = bool(getattr(site_doc, "filter_jewelry", 1))
+        categories = getattr(site_doc, "categories", None)
+
         deep_presaved = 0  # Deep commits incrementally as it goes (crash-safety); this
                             # is what it already saved before returning, on top of `saved` below.
 
         if scrape_method == "Shopify":
-            products, already_in_db = _scrape_shopify(site_url, skip_urls=shopify_skip_urls)
+            products, already_in_db = _scrape_shopify(
+                site_url, skip_urls=shopify_skip_urls, filter_jewelry=filter_jewelry, categories=categories)
             urls_found = len(products) + already_in_db
             method_used = "Shopify"
         elif scrape_method == "Firecrawl":
@@ -437,7 +442,6 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
         elif scrape_method == "Deep":
             from alaiy_os_connector_competitor_sites.api.utils.deep import scrape_deep
 
-            site_doc = frappe.get_doc("Competitor Site", site_name)
             products, urls_found, already_in_db, deep_presaved = scrape_deep(
                 site_url=site_url,
                 site_name=site_name,
@@ -445,13 +449,14 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
                 log_name=log_name,
                 listing_urls=getattr(site_doc, "listing_urls", None),
                 limit=getattr(site_doc, "deep_max_products", None) or 0,
-                filter_jewelry=bool(getattr(site_doc, "filter_jewelry", 1)),
-                categories=getattr(site_doc, "categories", None),
+                filter_jewelry=filter_jewelry,
+                categories=categories,
             )
             method_used = "Deep"
         else:
             try:
-                products, already_in_db = _scrape_shopify(site_url, skip_urls=shopify_skip_urls)
+                products, already_in_db = _scrape_shopify(
+                    site_url, skip_urls=shopify_skip_urls, filter_jewelry=filter_jewelry, categories=categories)
             except Exception:
                 products, already_in_db = [], 0
             if products or already_in_db:

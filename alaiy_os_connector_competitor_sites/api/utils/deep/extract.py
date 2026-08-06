@@ -32,11 +32,12 @@ _JSON_LD_RE = re.compile(
 )
 
 
-def try_products_json(site_url, skip_urls=None):
+def try_products_json(site_url, skip_urls=None, filter_jewelry=True, categories=None):
     """Tier 0. Returns (rows, already_skipped) same shape as _scrape_shopify,
     or ([], 0) if this doesn't look like a Shopify store at all."""
     try:
-        rows, skipped = _scrape_shopify(site_url, skip_urls=skip_urls or set())
+        rows, skipped = _scrape_shopify(
+            site_url, skip_urls=skip_urls or set(), filter_jewelry=filter_jewelry, categories=categories)
         return rows, skipped
     except Exception:
         return [], 0

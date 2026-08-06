@@ -150,7 +150,8 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
         "Scraped Product", filters={"source_site": site_name}, pluck="source_product_url"
     ))
     try:
-        rows0, skipped0 = extract.try_products_json(site_url, skip_urls=known_urls)
+        rows0, skipped0 = extract.try_products_json(
+            site_url, skip_urls=known_urls, filter_jewelry=filter_jewelry, categories=categories)
     except Exception:
         rows0, skipped0 = [], 0
         transcript.add("TIER 0  http probe failed")

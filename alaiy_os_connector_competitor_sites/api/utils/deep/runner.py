@@ -122,7 +122,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
             # Already reached the configured cap -- stop accepting more, even
             # mid-page. Without this, a page-boundary-only limit check let a
             # limit=5 run save all 99 rows found on page 1 before the check
-            # ever fired (confirmed live on a real Chico's run).
+            # ever fired (confirmed live on a real test-site run).
             return
         total_urls_found += 1
 
@@ -254,7 +254,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                     # Far more reliable than DOM scraping when it applies --
                     # price/sku/category come back as real typed fields
                     # instead of regex-scraped text. Confirmed necessary
-                    # live: a real Chico's jewelry listing found correct
+                    # live: a real test-site listing found correct
                     # names/URLs/images via DOM but price was blank on every
                     # single row.
                     api_candidate = None

@@ -2,8 +2,8 @@
 to fetch product data, by intercepting XHR/fetch responses during the first
 page load, instead of scraping rendered DOM text.
 
-Why this tier is worth having (confirmed live, not theoretical): a Chico's
-jewelry category page's DOM extraction found real product names/URLs/images
+Why this tier is worth having (confirmed live, not theoretical): a real test
+site's category page DOM extraction found real product names/URLs/images
 but EVERY row's price came back blank -- the price text on that page either
 paints after the extraction window or isn't in a shape the generic price
 regex recognises. Whatever XHR/fetch call actually populated that grid
@@ -143,8 +143,8 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
             url_lower = response.url.lower()
             if any(m in url_lower for m in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS):
                 # Never even score these -- confirmed live: Adobe's
-                # demdex.net analytics beacon scored 2 on Chico's own
-                # traffic and got picked over the real catalog API.
+                # demdex.net analytics beacon scored 2 on a real test
+                # site's traffic and got picked over the real catalog API.
                 # browser.py's request-blocking should already stop most
                 # of these before a response even completes; this is
                 # defense in depth against anything that slips through.
@@ -226,6 +226,8 @@ def map_generic_row(item, base_url, unwrap_key=None):
     image = find(_PRODUCT_KEY_HINTS["image"])
     price = find(_PRODUCT_KEY_HINTS["price"])
     sku = find(_PRODUCT_KEY_HINTS["sku"])
+    description = find(_PRODUCT_KEY_HINTS["description"])
+    category = find(_PRODUCT_KEY_HINTS["category"])
 
     if isinstance(image, list):
         image = image[0] if image else None
@@ -233,6 +235,9 @@ def map_generic_row(item, base_url, unwrap_key=None):
         image = image.get("url") or image.get("src")
     if isinstance(price, dict):
         price = price.get("amount") or price.get("value") or price.get("current")
+    if isinstance(category, list):
+        # breadcrumb-style category paths (["Women", "Jewelry", "Necklaces"])
+        category = " / ".join(str(c) for c in category if c)
 
     if not name or not url:
         return None
@@ -243,8 +248,8 @@ def map_generic_row(item, base_url, unwrap_key=None):
         "product_image_url": str(image) if image else "",
         "price": str(price) if price is not None else "",
         "sku": str(sku) if sku is not None else "",
-        "description": "",
-        "category": "",
+        "description": str(description) if description else "",
+        "category": str(category) if category else "",
     }
 
 

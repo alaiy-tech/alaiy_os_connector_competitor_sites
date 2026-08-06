@@ -124,10 +124,10 @@ def _row_from_product_ld(node):
 # adjacent to) an <img>, with some text nearby that looks like a price.
 # This does not depend on any site-specific class names.
 #
-# Two real gaps confirmed live on a Chico's category listing (fixed below,
-# generically, not by hardcoding anything Chico's-specific):
+# Two real gaps confirmed live on a real test site's category listing
+# (fixed below generically, not by hardcoding anything site-specific):
 #   1. Price text can sit in a SIBLING container, not an ancestor of the
-#      anchor -- Chico's own markup has <a><h2>title</h2></a> and the price
+#      anchor -- the real markup had <a><h2>title</h2></a> and the price
 #      span as siblings, both nested a few levels below a shared parent.
 #      Walking 3 levels up from the anchor never reached that parent.
 #   2. The VISIBLE price can be geo-localized to a currency our regex never
@@ -159,10 +159,20 @@ _DOM_CARD_JS = r"""
     return m ? m[0] : '';
   }
 
+  const placeholderRe = /no-?preview|placeholder|blank\.(gif|png)|data:image\/gif;base64/i;
+
+  function resolveImageUrl(img) {
+    return img.getAttribute('data-src') || img.getAttribute('data-original') ||
+           (img.getAttribute('srcset') || '').split(',').pop().trim().split(' ')[0] ||
+           img.getAttribute('src') || '';
+  }
+
   const anchors = Array.from(document.querySelectorAll('a[href]'));
   for (const a of anchors) {
-    const img = a.querySelector('img') || (a.closest('[class]') || a).querySelector('img');
-    if (!img) continue;
+    const imgs = Array.from(a.querySelectorAll('img'));
+    const allImgs = imgs.length ? imgs : Array.from((a.closest('[class]') || a).querySelectorAll('img'));
+    if (!allImgs.length) continue;
+    const img = allImgs[0]; // for alt/title lookups below -- same across responsive variants
 
     const href = a.href;
     if (!href || seen.has(href)) continue;
@@ -170,8 +180,8 @@ _DOM_CARD_JS = r"""
     // Walk up to the shared per-card container -- real card content
     // (title, price) is often a sibling of the anchor's own ancestor
     // chain, only reachable from a shared parent a level or two up.
-    // Bounded at 4: on Chico's own markup, level 4 from the anchor is
-    // already the multi-card grid wrapper (confirmed live) -- climbing
+    // Bounded at 4: on the real test site's own markup, level 4 from the
+    // anchor was already the multi-card grid wrapper (confirmed live) -- climbing
     // further would start pulling a DIFFERENT product's price/attributes
     // into scope via querySelectorAll('*'), which is worse than missing
     // the price entirely.
@@ -188,11 +198,21 @@ _DOM_CARD_JS = r"""
                (a.innerText || '').trim().split('\n')[0] || img.getAttribute('title') || '';
     name = name.trim().slice(0, 200);
 
-    // image: prefer lazy-load attributes since real <img src> is often a
-    // placeholder until the image actually scrolls into view
-    const imageUrl = img.getAttribute('data-src') || img.getAttribute('data-original') ||
-                      (img.getAttribute('srcset') || '').split(',').pop().trim().split(' ')[0] ||
-                      img.getAttribute('src') || '';
+    // image: a card can carry more than one <img> (responsive/desktop vs
+    // mobile variants) -- confirmed live: the FIRST <img> in DOM order was
+    // a Next.js lazy-load failure placeholder (a "no-preview" fallback
+    // src), the real CDN srcset was on a second <img>. Check every
+    // candidate, skip anything that resolves to an obvious placeholder,
+    // take the first real one.
+    let imageUrl = '';
+    for (const candidate of allImgs) {
+      const url = resolveImageUrl(candidate);
+      if (url && !placeholderRe.test(url)) {
+        imageUrl = url;
+        break;
+      }
+    }
+    if (!imageUrl) imageUrl = resolveImageUrl(allImgs[0]);
 
     seen.add(href);
     results.push({

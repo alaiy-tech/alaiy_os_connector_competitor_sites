@@ -47,7 +47,7 @@ GRAPHQL_BODY_MARKERS = ('"query"', "mutation ", "query ")
 # Analytics/martech/ad-tech hosts -- never real product data even when a
 # response coincidentally touches a couple of product-field-hint categories
 # (confirmed live: Adobe Experience Platform's demdex.net "interact" beacon
-# scored 2 on Chico's own traffic and got picked over -- and instead of --
+# scored 2 on a real test site's traffic and got picked over -- instead of --
 # the real catalog API). Used two ways: browser.py aborts requests to these
 # hosts outright (saves bandwidth/memory, never loses image URLs since those
 # come from DOM attributes, not fetched bytes), and discovery.py refuses to
@@ -91,5 +91,13 @@ PRODUCT_KEY_HINTS = {
     "sku": (
         "sku", "id", "productid", "styleid", "itemid", "variantid",
         "gid", "articlenumber", "mpn", "upc", "gtin",
+    ),
+    "description": (
+        "description", "shortdescription", "longdescription", "summary",
+        "bodyhtml", "body_html", "details",
+    ),
+    "category": (
+        "category", "categoryname", "producttype", "categorypath",
+        "breadcrumb", "taxon",
     ),
 }

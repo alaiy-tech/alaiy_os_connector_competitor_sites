@@ -70,6 +70,21 @@ ANALYTICS_TRACKER_HOST_MARKERS = (
     "onetrust.com", "clarity.ms", "tealiumiq.com",
 )
 
+# First-party analytics/CDP proxy convention -- many sites route a
+# third-party analytics vendor (Segment, RudderStack, etc) through their
+# OWN subdomain instead of the vendor's domain directly, which the host-
+# substring list above can never enumerate (it's a different hostname on
+# every site). Confirmed live: analytics.mejuri.com's settings endpoint
+# scored 2 on product-field hints and got picked as a Tier 1 candidate --
+# caught safely by pagination verification that run, but not something to
+# rely on catching every time. Matched by hostname PREFIX (the subdomain
+# label itself), not substring-anywhere, to avoid false-positiving on a
+# real product subdomain that happens to contain one of these words deeper
+# in its name.
+ANALYTICS_SUBDOMAIN_PREFIXES = (
+    "analytics.", "tracking.", "telemetry.", "metrics.", "pixel.", "beacon.",
+)
+
 # Fuzzy key-name vocabulary for mapping an arbitrary product-API dict to our
 # canonical row shape (discovery.py's map_generic_row) -- deliberately broad
 # across the field names real commerce APIs actually use (Shopify Storefront

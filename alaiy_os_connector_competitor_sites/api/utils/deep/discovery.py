@@ -20,7 +20,7 @@ GraphQL, a hosted search index, or anything else that returns JSON.
 """
 
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 
@@ -169,6 +169,7 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
             if response.request.resource_type not in ("xhr", "fetch"):
                 return
             url_lower = response.url.lower()
+            host = urlparse(url_lower).netloc
             if any(m in url_lower for m in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS):
                 # Never even score these -- confirmed live: Adobe's
                 # demdex.net analytics beacon scored 2 on a real test
@@ -176,6 +177,12 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
                 # browser.py's request-blocking should already stop most
                 # of these before a response even completes; this is
                 # defense in depth against anything that slips through.
+                return
+            if any(host.startswith(p) for p in api_signatures.ANALYTICS_SUBDOMAIN_PREFIXES):
+                # First-party analytics/CDP proxy convention (Segment,
+                # RudderStack, etc routed through the site's own subdomain)
+                # -- confirmed live: analytics.mejuri.com's settings
+                # endpoint scored 2 and got picked as a candidate.
                 return
             ctype = response.headers.get("content-type", "")
             if "json" not in ctype:

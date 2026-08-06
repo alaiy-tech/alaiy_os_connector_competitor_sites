@@ -43,6 +43,7 @@ def _score_dict_keys(d):
 
 
 _MAX_TREE_DEPTH = 40  # a real product-list array never sits this deep; caps runaway walks too
+_MAX_NODES_VISITED = 20_000  # hard total-work cap, independent of depth -- see docstring
 
 
 def _find_arrays(obj, path=""):
@@ -54,10 +55,24 @@ def _find_arrays(obj, path=""):
     Iterative (explicit stack), not recursive -- confirmed live: a real
     __NEXT_DATA__ payload (Next.js embeds the whole router/props state,
     often deeply nested) blew past Python's default recursion limit on a
-    real site. Also depth-capped as a second, independent safety net."""
+    real site.
+
+    Depth-capped AND total-node-capped, independently -- confirmed live
+    that depth alone wasn't enough: a real __NEXT_DATA__ payload can be
+    megabytes of unrelated build/route-manifest data with thousands of
+    dict keys at shallow depth (wide, not deep), and this walk runs on
+    EVERY page fetch during pagination (page1/page2 verification, every
+    subsequent page) -- an unbounded walk there is a real multiplying
+    hang, not just a slow one-off. Bailing out past the node cap still
+    returns whatever arrays were already found; a genuine product list is
+    virtually always reachable well before this limit if it exists."""
     stack = [(obj, path, 0)]
+    visited = 0
     while stack:
+        if visited >= _MAX_NODES_VISITED:
+            return
         node, node_path, depth = stack.pop()
+        visited += 1
         if depth > _MAX_TREE_DEPTH:
             continue
         if isinstance(node, list):

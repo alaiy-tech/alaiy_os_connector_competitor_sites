@@ -287,6 +287,14 @@
 }
 .rq-modal-price { font-weight: 600; }
 
+.rq-modal-field-full {
+  margin-bottom: 18px;
+}
+.rq-modal-field-full .rq-modal-field-value {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .rq-modal-source-link {
   font-size: 13px;
   color: var(--primary);

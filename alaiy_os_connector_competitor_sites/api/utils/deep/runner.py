@@ -244,7 +244,14 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
     else:
         transcript.add("TIER 0  products.json probe: no results (not a Shopify store, or empty)")
 
-    if len(all_candidate_rows) >= _MIN_ROWS_TO_SKIP_BROWSER and budget.expired() is False:
+    # Skip the browser entirely once Tier 0 alone already satisfies either
+    # the fixed "clearly enough" threshold, OR the caller's own configured
+    # limit -- confirmed live: Tier 0 found 139 real candidates against a
+    # limit=10 run, but the fixed threshold (20) alone didn't trigger since
+    # limit had already capped acceptance at 10, so the browser launched
+    # and did 3 more page loads for rows that could only ever be dropped.
+    tier0_satisfies_limit = limit and len(all_candidate_rows) >= limit
+    if (len(all_candidate_rows) >= _MIN_ROWS_TO_SKIP_BROWSER or tier0_satisfies_limit) and budget.expired() is False:
         transcript.add(f"Skipping browser tiers — tier 0 already found {len(all_candidate_rows)} candidates.")
         flush_buffer()
         return _accept_and_finish(

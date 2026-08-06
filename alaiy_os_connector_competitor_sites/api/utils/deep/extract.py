@@ -92,7 +92,7 @@ def extract_embedded_json(page, base_url):
         rows = [discovery.map_generic_row(item, base_url, unwrap_key) for item in arr]
         return [r for r in rows if r]
 
-    for name in _EMBEDDED_JSON_GLOBALS:
+    for name in api_signatures.EMBEDDED_JSON_GLOBALS:
         try:
             data = page.evaluate(f"() => window.{name} || null")
         except Exception:

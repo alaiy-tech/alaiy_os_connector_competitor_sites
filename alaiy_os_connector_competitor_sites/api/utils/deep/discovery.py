@@ -42,18 +42,31 @@ def _score_dict_keys(d):
     return hits
 
 
+_MAX_TREE_DEPTH = 40  # a real product-list array never sits this deep; caps runaway walks too
+
+
 def _find_arrays(obj, path=""):
     """Yield (path, list) for every array found anywhere in a JSON tree.
     Only descends into an array's first 3 items to look for further nested
     arrays -- real product-list arrays are homogeneous, no need to walk
-    thousands of siblings looking for a shape that won't repeat."""
-    if isinstance(obj, list):
-        yield path, obj
-        for i, item in enumerate(obj[:3]):
-            yield from _find_arrays(item, f"{path}[{i}]")
-    elif isinstance(obj, dict):
-        for k, v in obj.items():
-            yield from _find_arrays(v, f"{path}.{k}" if path else k)
+    thousands of siblings looking for a shape that won't repeat.
+
+    Iterative (explicit stack), not recursive -- confirmed live: a real
+    __NEXT_DATA__ payload (Next.js embeds the whole router/props state,
+    often deeply nested) blew past Python's default recursion limit on a
+    real site. Also depth-capped as a second, independent safety net."""
+    stack = [(obj, path, 0)]
+    while stack:
+        node, node_path, depth = stack.pop()
+        if depth > _MAX_TREE_DEPTH:
+            continue
+        if isinstance(node, list):
+            yield node_path, node
+            for i, item in enumerate(node[:3]):
+                stack.append((item, f"{node_path}[{i}]", depth + 1))
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                stack.append((v, f"{node_path}.{k}" if node_path else k, depth + 1))
 
 
 _MAX_UNWRAP_KEYS = 3  # only unwrap a thin wrapper dict (edges/node-shaped), not a rich object

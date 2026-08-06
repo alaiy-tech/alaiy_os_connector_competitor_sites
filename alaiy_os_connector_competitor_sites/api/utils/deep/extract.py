@@ -123,11 +123,41 @@ def _row_from_product_ld(node):
 # Kept deliberately simple: an <a href> that wraps (or is immediately
 # adjacent to) an <img>, with some text nearby that looks like a price.
 # This does not depend on any site-specific class names.
+#
+# Two real gaps confirmed live on a Chico's category listing (fixed below,
+# generically, not by hardcoding anything Chico's-specific):
+#   1. Price text can sit in a SIBLING container, not an ancestor of the
+#      anchor -- Chico's own markup has <a><h2>title</h2></a> and the price
+#      span as siblings, both nested a few levels below a shared parent.
+#      Walking 3 levels up from the anchor never reached that parent.
+#   2. The VISIBLE price can be geo-localized to a currency our regex never
+#      recognised (₹5,200 shown, not $35.50) while the real USD figure sits
+#      in a data-* attribute on the same element (confirmed:
+#      data-bp-lti="$35.50"). Not hardcoding that attribute name (site-
+#      specific) -- instead scanning every element's data-* attribute VALUES
+#      in the same scope for a $-prefixed figure, since a $-tagged value is
+#      unambiguous regardless of what attribute carries it or what currency
+#      the page chose to display.
 _DOM_CARD_JS = r"""
 () => {
-  const priceRe = /[$£€]\s?\d[\d,.\s]*\d|\d[\d,.\s]*\d\s?(USD|GBP|EUR)/i;
+  const usdRe = /\$\s?\d[\d,.\s]*\d/;
+  const priceRe = /[$£€¥₹₩₺₽]\s?\d[\d,.\s]*\d|\d[\d,.\s]*\d\s?(USD|GBP|EUR|JPY|INR|KRW|TRY|RUB)/i;
   const results = [];
   const seen = new Set();
+
+  function findPriceInScope(node) {
+    // Prefer an unambiguous $-tagged data-* attribute anywhere in scope --
+    // catches a USD figure hiding behind a geo-localized display currency.
+    const all = node.querySelectorAll ? node.querySelectorAll('*') : [];
+    for (const el of all) {
+      for (const attr of el.attributes || []) {
+        const m = usdRe.exec(attr.value || '');
+        if (m) return m[0];
+      }
+    }
+    const m = (node.innerText || '').match(priceRe);
+    return m ? m[0] : '';
+  }
 
   const anchors = Array.from(document.querySelectorAll('a[href]'));
   for (const a of anchors) {
@@ -137,12 +167,19 @@ _DOM_CARD_JS = r"""
     const href = a.href;
     if (!href || seen.has(href)) continue;
 
-    // price: look in the anchor itself, then walk up a couple of ancestors
+    // Walk up to the shared per-card container -- real card content
+    // (title, price) is often a sibling of the anchor's own ancestor
+    // chain, only reachable from a shared parent a level or two up.
+    // Bounded at 4: on Chico's own markup, level 4 from the anchor is
+    // already the multi-card grid wrapper (confirmed live) -- climbing
+    // further would start pulling a DIFFERENT product's price/attributes
+    // into scope via querySelectorAll('*'), which is worse than missing
+    // the price entirely.
     let priceText = '';
     let node = a;
-    for (let i = 0; i < 3 && node; i++) {
-      const m = (node.innerText || '').match(priceRe);
-      if (m) { priceText = m[0]; break; }
+    for (let i = 0; i < 4 && node; i++) {
+      priceText = findPriceInScope(node);
+      if (priceText) break;
       node = node.parentElement;
     }
 

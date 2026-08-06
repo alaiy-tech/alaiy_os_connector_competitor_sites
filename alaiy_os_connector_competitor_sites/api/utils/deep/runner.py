@@ -65,6 +65,78 @@ def _heartbeat(log_name, last_beat_at, **extra_fields):
         last_beat_at[0] = now
 
 
+_ENRICH_PAGE_TIMEOUT_MS = 15_000
+
+
+def _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_id):
+    """PDP enrichment: sku/description/category are never present on a
+    listing-grid card (confirmed against real markup -- a card only ever
+    shows name/image/price), so the only way to fill them in is visiting
+    each product's own page. Runs after the listing pagination for this
+    scrape has already flushed its rows to the DB -- queries this run's own
+    Scraped Product rows still missing all three fields, and updates
+    whichever ones a PDP visit's JSON-LD (Product schema.org, the standard
+    and most reliable source of this on a real product page) can fill in.
+    Budget/memory-aware, same guards as the rest of the run -- a huge
+    catalog stops enrichment cleanly rather than running unbounded."""
+    rows = frappe.get_all(
+        "Scraped Product",
+        filters={
+            "scrape_id": scrape_id,
+            "sku": ["in", ["", None]],
+            "description": ["in", ["", None]],
+            "categories": ["in", ["", None]],
+        },
+        fields=["name", "source_product_url"],
+    )
+    if not rows:
+        return
+
+    transcript.add(f"ENRICH  visiting {len(rows)} product page(s) for sku/description/category")
+    page = context.new_page()
+    enriched = 0
+    try:
+        for row in rows:
+            if budget.expired():
+                transcript.add("ENRICH  time budget exhausted -- stopping enrichment early.")
+                break
+            if resource_guard.should_stop():
+                transcript.add("ENRICH  low memory -- stopping enrichment early.")
+                break
+            url = row.source_product_url
+            if not url:
+                continue
+            try:
+                page.goto(url, timeout=_ENRICH_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+                page.wait_for_timeout(600)
+                html = page.content()
+            except Exception:
+                continue
+
+            ld_rows = extract.extract_json_ld(html)
+            if not ld_rows:
+                continue
+            best = ld_rows[0]
+            updates = {}
+            if best.get("sku"):
+                updates["sku"] = best["sku"]
+            if best.get("description"):
+                updates["description"] = best["description"]
+            if best.get("category"):
+                updates["categories"] = best["category"]
+            if updates:
+                frappe.db.set_value("Scraped Product", row.name, updates)
+                enriched += 1
+    finally:
+        try:
+            page.close()
+        except Exception:
+            pass
+        frappe.db.commit()
+
+    transcript.add(f"ENRICH  filled sku/description/category for {enriched}/{len(rows)} product(s)")
+
+
 def _finalize(log_name, transcript, status, summary_line, saved, urls_found, already_in_db):
     if not log_name:
         return
@@ -471,6 +543,15 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         pass
 
             transcript.add(f"BROWSER  {pages_fetched} page(s) fetched")
+
+            # PDP enrichment: sku/description/category genuinely don't exist
+            # anywhere on a listing-grid card (confirmed against real
+            # markup -- title/price only), the only way to get them is
+            # visiting each product's own page. Flush first so every row
+            # collected so far is actually in the DB for this pass to find
+            # and update.
+            flush_buffer()
+            _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_id)
 
         except Exception as e:
             _log_error(f"Deep scraper: unexpected error ({site_name})", str(e))

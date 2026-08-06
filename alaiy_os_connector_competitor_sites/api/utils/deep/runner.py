@@ -15,6 +15,7 @@ import frappe
 
 from alaiy_os_connector_competitor_sites.api.utils.deep import blocking
 from alaiy_os_connector_competitor_sites.api.utils.deep import browser as browser_mod
+from alaiy_os_connector_competitor_sites.api.utils.deep import discovery
 from alaiy_os_connector_competitor_sites.api.utils.deep import extract
 from alaiy_os_connector_competitor_sites.api.utils.deep import paginate
 from alaiy_os_connector_competitor_sites.api.utils.deep.budget import Budget, ResourceGuard
@@ -117,6 +118,12 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
 
     def handle_candidate(row, listing_url_for_validation):
         nonlocal total_urls_found
+        if limit and len(all_candidate_rows) >= limit:
+            # Already reached the configured cap -- stop accepting more, even
+            # mid-page. Without this, a page-boundary-only limit check let a
+            # limit=5 run save all 99 rows found on page 1 before the check
+            # ever fired (confirmed live on a real Chico's run).
+            return
         total_urls_found += 1
 
         accepted, reason = validate_row(row, listing_url_for_validation)
@@ -228,8 +235,68 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                     transcript.add("BUDGET  low memory mid-run — stopping.")
                     break
 
+                def _pagination_break_reason():
+                    """Shared between the API and DOM pagination loops --
+                    same four stop conditions either way."""
+                    if budget.expired():
+                        return "time budget exhausted mid-pagination — stopping."
+                    if resource_guard.should_stop():
+                        return "low memory mid-pagination — stopping."
+                    if not budget.afford_one_more_page():
+                        return "next page likely won't fit in remaining time — stopping."
+                    if limit and total_urls_found >= limit:
+                        return f"reached configured max ({limit}) — stopping."
+                    return None
+
                 page = context.new_page()
                 try:
+                    # --- Tier 1: discover the page's own JSON API, if any --
+                    # Far more reliable than DOM scraping when it applies --
+                    # price/sku/category come back as real typed fields
+                    # instead of regex-scraped text. Confirmed necessary
+                    # live: a real Chico's jewelry listing found correct
+                    # names/URLs/images via DOM but price was blank on every
+                    # single row.
+                    api_candidate = None
+                    try:
+                        api_candidate = discovery.capture_best_api_candidate(page, listing_url)
+                    except Exception as e:
+                        transcript.add(f"  TIER 1  API discovery failed: {e}")
+
+                    if api_candidate:
+                        api_url, array_path, score = api_candidate
+                        transcript.add(f"TIER 1  API discovered  {api_url}  (path={array_path!r}, score={score})")
+
+                        def fetch_api(url):
+                            nonlocal pages_fetched
+                            t0 = time.monotonic()
+                            rows = discovery.fetch_api_page(page, url, array_path)
+                            pages_fetched += 1
+                            budget.record_page_duration(time.monotonic() - t0)
+                            transcript.add(f"  API {url}  {len(rows)} candidates")
+                            return rows
+
+                        scheme, first_page_rows = paginate.detect_pagination(api_url, fetch_api)
+                        if scheme:
+                            transcript.add(
+                                f"PAGINATION  (api) detected key={scheme['key']} start={scheme['start']} step={scheme['step']}"
+                            )
+                            for _u, rows in paginate.iter_pages(api_url, scheme, fetch_api):
+                                for row in rows:
+                                    handle_candidate(row, listing_url)
+                                _heartbeat(log_name, last_beat_at, urls_found=total_urls_found)
+                                reason = _pagination_break_reason()
+                                if reason:
+                                    transcript.add(f"BUDGET  {reason}")
+                                    break
+                        else:
+                            transcript.add(
+                                f"PAGINATION  (api) no verified scheme — using the {len(first_page_rows)} row(s) already found."
+                            )
+                            for row in first_page_rows:
+                                handle_candidate(row, listing_url)
+                        continue
+
                     def _load_and_extract(url):
                         try:
                             page.goto(url, timeout=_DOM_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
@@ -313,17 +380,9 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             for row in rows:
                                 handle_candidate(row, listing_url)
                             _heartbeat(log_name, last_beat_at, urls_found=total_urls_found)
-                            if budget.expired():
-                                transcript.add("BUDGET  time budget exhausted mid-pagination — stopping.")
-                                break
-                            if resource_guard.should_stop():
-                                transcript.add("BUDGET  low memory mid-pagination — stopping.")
-                                break
-                            if not budget.afford_one_more_page():
-                                transcript.add("BUDGET  next page likely won't fit in remaining time — stopping.")
-                                break
-                            if limit and total_urls_found >= limit:
-                                transcript.add(f"LIMIT  reached configured max ({limit}) — stopping.")
+                            reason = _pagination_break_reason()
+                            if reason:
+                                transcript.add(f"BUDGET  {reason}")
                                 break
                     else:
                         # Use the rows already found while probing candidate keys —

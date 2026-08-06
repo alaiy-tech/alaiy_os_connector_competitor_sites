@@ -1,5 +1,6 @@
 import re
 import time
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import frappe
 
@@ -36,13 +37,11 @@ def _strip_html(html):
 
 
 def _base_url(site_url):
-    from urllib.parse import urlparse
     p = urlparse(site_url)
     return f"{p.scheme}://{p.netloc}"
 
 
 def _collection_handle(site_url):
-    from urllib.parse import urlparse
     path = urlparse(site_url).path
     m = re.search(r"/collections/([^/?#]+)", path)
     return m.group(1) if m else None
@@ -134,6 +133,12 @@ def _fetch_products(session, endpoint, skip_urls=None, filter_jewelry=True):
     products = []
     skipped = 0
     total_raw = 0
+
+    parsed_endpoint = urlparse(endpoint)
+    endpoint_query = dict(parse_qsl(parsed_endpoint.query))
+    page_limit = int(endpoint_query.get("limit", "250")) if str(endpoint_query.get("limit", "250")).isdigit() else 250
+    page_num = 1
+
     next_url = endpoint
     while next_url:
         r = _get_with_retry(session, next_url)
@@ -173,7 +178,25 @@ def _fetch_products(session, endpoint, skip_urls=None, filter_jewelry=True):
                 "category": p.get("product_type", ""),
             })
 
-        next_url = _parse_link_header(r.headers.get("Link"))
+        next_from_link = _parse_link_header(r.headers.get("Link"))
+        if next_from_link:
+            next_url = next_from_link
+        elif len(batch) >= page_limit:
+            # No Link header at all -- confirmed live: some Shopify stores'
+            # CDN config never sends one on products.json, and pagination
+            # silently stopped after page 1 every time (a 688-product real
+            # catalog returned only ~250, confirmed by directly walking
+            # ?page=N with curl). Fall back to manual ?page=N pagination,
+            # but only keep going while a page came back FULL -- a
+            # genuinely last, partial page (len < limit) means there's
+            # nothing more regardless of pagination method, so this can't
+            # loop forever guessing past the real end.
+            page_num += 1
+            next_url = urlunparse(parsed_endpoint._replace(
+                query=urlencode({**endpoint_query, "limit": page_limit, "page": page_num})
+            ))
+        else:
+            next_url = None
 
     if filter_jewelry and total_raw and not products:
         # Same signal Deep's adaptive filter surfaces -- a real catalog was

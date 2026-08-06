@@ -21,6 +21,7 @@ from alaiy_os_connector_competitor_sites.api.utils.deep import extract
 from alaiy_os_connector_competitor_sites.api.utils.deep import paginate
 from alaiy_os_connector_competitor_sites.api.utils.deep.budget import Budget, ResourceGuard
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _log_error, _save_products
+from alaiy_os_connector_competitor_sites.api.utils.shopify_scraper import _strip_html
 from alaiy_os_connector_competitor_sites.api.utils.validate import is_jewelry_extended, validate_row
 
 _SAVE_BATCH_SIZE = 40
@@ -114,16 +115,23 @@ def _enrich_missing_fields(context, transcript, budget, resource_guard, scrape_i
                 continue
 
             ld_rows = extract.extract_json_ld(html)
-            if not ld_rows:
-                continue
-            best = ld_rows[0]
+            best = ld_rows[0] if ld_rows else {}
             updates = {}
             if best.get("sku"):
                 updates["sku"] = best["sku"]
             if best.get("description"):
-                updates["description"] = best["description"]
+                updates["description"] = _strip_html(best["description"])
             if best.get("category"):
                 updates["categories"] = best["category"]
+            elif not best.get("category"):
+                # Product JSON-LD frequently has no category field at all
+                # (confirmed live) -- a page's separate BreadcrumbList block
+                # usually carries the real category path instead.
+                breadcrumb_category = extract.extract_breadcrumb_category(html)
+                if breadcrumb_category:
+                    updates["categories"] = breadcrumb_category
+            if not ld_rows and not updates:
+                continue
             if updates:
                 frappe.db.set_value("Scraped Product", row.name, updates)
                 enriched += 1

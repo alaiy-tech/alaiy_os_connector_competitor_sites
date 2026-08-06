@@ -168,6 +168,33 @@ def extract_json_ld(html):
     return rows
 
 
+def extract_breadcrumb_category(html):
+    """A page's `Product` JSON-LD block often has no `category` field at
+    all (confirmed live: real fields present were name/image/description/
+    color/sku/brand/offers/aggregateRating -- no category), but the SAME
+    page frequently carries a separate `BreadcrumbList` JSON-LD block with
+    the real category path (confirmed live: "Jewelry & Accessories" >
+    "Jewelry"). Returns the deepest (most specific) breadcrumb entry's name
+    as a fallback category, or "" if no BreadcrumbList is present. The
+    top-level "home" crumb is skipped -- it's never a real category."""
+    for match in _JSON_LD_RE.finditer(html or ""):
+        try:
+            data = json.loads(match.group(1).strip())
+        except (ValueError, TypeError):
+            continue
+        for node in _flatten_ld_json(data):
+            node_type = node.get("@type")
+            types = node_type if isinstance(node_type, list) else [node_type]
+            if "BreadcrumbList" not in types:
+                continue
+            items = node.get("itemListElement") or []
+            named = [i.get("name") for i in items if isinstance(i, dict) and i.get("name")]
+            named = [n for n in named if n.strip().lower() != "home"]
+            if named:
+                return named[-1]
+    return ""
+
+
 def _row_from_product_ld(node):
     if not isinstance(node, dict):
         return None

@@ -248,7 +248,7 @@
         </div>
         <div class="rq-modal-field">
           <div class="rq-modal-field-label">Price</div>
-          <div class="rq-modal-field-value rq-modal-price">${p.source_price ? "$" + _esc(p.source_price) : "—"}</div>
+          <div class="rq-modal-field-value rq-modal-price">${p.source_price ? _esc(p.source_price) : "—"}</div>
         </div>
       </div>
       ${p.source_product_url

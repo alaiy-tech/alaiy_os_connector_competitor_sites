@@ -252,7 +252,123 @@ def extract_embedded_json(page, base_url):
         if result and (best is None or result[0] > best[0] or (result[0] == best[0] and len(result[1]) > len(best[1]))):
             best = result
 
+    # Tier 2a2 -- many frameworks push their SSR payload into a LINKED js
+    # asset (a webpack/vite chunk) rather than an inline <script> tag at
+    # all, especially once code-splitting kicks in on a large app bundle.
+    # Same "find the product array in a JSON blob" problem, just sourced
+    # from fetched JS text instead of the DOM -- generic across platforms,
+    # not a framework-specific guess.
+    for js_text in _fetch_linked_js_assets(page):
+        for literal in _find_json_literals_near_markers(js_text):
+            try:
+                data = json.loads(literal)
+            except (ValueError, TypeError):
+                continue
+            result = _try(data)
+            if result and (best is None or result[0] > best[0] or (result[0] == best[0] and len(result[1]) > len(best[1]))):
+                best = result
+
     return best[1] if best else []
+
+
+_JS_ASSET_IGNORE_MARKERS = (
+    "vendor", "polyfill", "runtime", "chunk-common", "webpack", "framework",
+)
+_MAX_JS_ASSETS_FETCHED = 8
+_MAX_JS_ASSET_BYTES = 2_000_000  # a real data payload lives well under this; skip pathological bundle sizes
+_JS_LITERAL_MARKER_RE = re.compile(
+    r"(?:" + "|".join(re.escape(m) for m in api_signatures.EMBEDDED_JSON_GLOBALS)
+    + r"|products|productlist|catalog|itemlist)\s*[:=]\s*", re.IGNORECASE,
+)
+_MAX_JS_LITERALS_PER_FILE = 10
+
+
+def _fetch_linked_js_assets(page):
+    """Collects every <script src> on the page (own origin or CDN), skips
+    the ones already known to be non-app boilerplate by filename, and
+    fetches a bounded number of the rest. Uses requests, not another
+    Playwright navigation -- these are static files, no rendering needed."""
+    import requests
+
+    try:
+        srcs = page.evaluate(
+            "() => Array.from(document.querySelectorAll('script[src]')).map(s => s.src)"
+        ) or []
+    except Exception:
+        return []
+
+    candidates = [
+        s for s in srcs
+        if not any(m in s.lower() for m in _JS_ASSET_IGNORE_MARKERS)
+        and not any(m in s.lower() for m in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS)
+        and not any(m in s.lower() for m in api_signatures.ANALYTICS_PATH_MARKERS)
+    ][:_MAX_JS_ASSETS_FETCHED]
+
+    texts = []
+    for src in candidates:
+        try:
+            resp = requests.get(src, timeout=8, stream=True)
+            if resp.status_code != 200:
+                continue
+            content = resp.raw.read(_MAX_JS_ASSET_BYTES + 1, decode_content=True)
+            if len(content) > _MAX_JS_ASSET_BYTES:
+                continue
+            texts.append(content.decode("utf-8", errors="ignore"))
+        except Exception:
+            continue
+    return texts
+
+
+def _find_json_literals_near_markers(js_text):
+    """Finds JSON object/array literals sitting right after a product-ish
+    variable name (reusing the same SSR-global vocabulary as the inline-
+    <script> tier, plus generic product words) -- brace-matched with
+    string-literal awareness, not a naive non-greedy regex, since a real
+    payload is arbitrarily nested and regex can't balance that. Bounded
+    per file so one pathological bundle can't turn into an unbounded
+    scan."""
+    literals = []
+    for m in _JS_LITERAL_MARKER_RE.finditer(js_text):
+        if len(literals) >= _MAX_JS_LITERALS_PER_FILE:
+            break
+        start = m.end()
+        if start >= len(js_text) or js_text[start] not in "{[":
+            continue
+        literal = _extract_balanced_literal(js_text, start)
+        if literal:
+            literals.append(literal)
+    return literals
+
+
+def _extract_balanced_literal(text, start):
+    """Scans forward from an opening {/[ to its matching close, tracking
+    nesting depth and skipping over string-literal contents (so a brace
+    inside a quoted string doesn't miscount) -- a real embedded payload is
+    always deeply nested, a fixed-depth regex can't do this correctly."""
+    depth = 0
+    in_string = False
+    string_char = ""
+    escaped = False
+    for i in range(start, min(len(text), start + _MAX_JS_ASSET_BYTES)):
+        c = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif c == "\\":
+                escaped = True
+            elif c == string_char:
+                in_string = False
+            continue
+        if c in ("'", '"'):
+            in_string = True
+            string_char = c
+        elif c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
 
 
 def _flatten_ld_json(obj):

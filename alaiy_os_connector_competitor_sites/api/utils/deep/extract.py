@@ -73,34 +73,43 @@ _OTHER_JSON_SCRIPT_TAGS_JS = (
 
 def extract_embedded_json(page, base_url):
     """Tier 2a. Reads every known SSR-framework window global, then every
-    other non-JSON-LD JSON <script> tag on the page, and for whichever one
-    exists, reuses discovery.py's generic array-scoring and row-mapping to
-    find and map the product list inside it -- same "find the product
-    array in a JSON blob" problem whether that blob came from a network
-    response (tier 1) or an embedded payload (here), so no separate scoring
-    logic needed. Returns [] if nothing found scores as containing a
-    product list. Returns on the FIRST source that yields real rows --
-    doesn't keep scanning once one candidate works."""
+    other non-JSON-LD JSON <script> tag on the page, and reuses
+    discovery.py's generic array-scoring and row-mapping on EACH one --
+    same "find the product array in a JSON blob" problem whether that
+    blob came from a network response (tier 1) or an embedded payload
+    (here), so no separate scoring logic needed. Scans every source and
+    keeps the best-scoring one, rather than returning on the first source
+    that yields any rows at all -- confirmed live: a page can carry a
+    real product array in one global (say __NEXT_DATA__) alongside a
+    smaller, higher-scoring-by-coincidence footer/nav-link array in
+    another (say a global site-header/-footer settings payload); the
+    first-hit version returned the nav links and never even looked at the
+    real one."""
     from alaiy_os_connector_competitor_sites.api.utils.deep import discovery
 
     def _try(data):
         if not data:
-            return []
+            return None
         found = discovery.best_product_array(data)
         if not found:
-            return []
-        _path, unwrap_key, arr, _score = found
+            return None
+        _path, unwrap_key, arr, score = found
         rows = [discovery.map_generic_row(item, base_url, unwrap_key) for item in arr]
-        return [r for r in rows if r]
+        rows = [r for r in rows if r]
+        if not rows:
+            return None
+        return score, rows
+
+    best = None
 
     for name in api_signatures.EMBEDDED_JSON_GLOBALS:
         try:
             data = page.evaluate(f"() => window.{name} || null")
         except Exception:
             data = None
-        rows = _try(data)
-        if rows:
-            return rows
+        result = _try(data)
+        if result and (best is None or result[0] > best[0] or (result[0] == best[0] and len(result[1]) > len(best[1]))):
+            best = result
 
     try:
         script_texts = page.evaluate(_OTHER_JSON_SCRIPT_TAGS_JS) or []
@@ -111,11 +120,11 @@ def extract_embedded_json(page, base_url):
             data = json.loads(text)
         except (ValueError, TypeError):
             continue
-        rows = _try(data)
-        if rows:
-            return rows
+        result = _try(data)
+        if result and (best is None or result[0] > best[0] or (result[0] == best[0] and len(result[1]) > len(best[1]))):
+            best = result
 
-    return []
+    return best[1] if best else []
 
 
 def _flatten_ld_json(obj):

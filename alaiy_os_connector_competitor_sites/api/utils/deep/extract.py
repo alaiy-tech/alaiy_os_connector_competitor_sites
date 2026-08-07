@@ -1,27 +1,33 @@
 """Product extraction, cheapest-first:
 
-  tier 0  — products.json probe (no browser at all): reuses the existing
-            Shopify scraper, since a meaningful fraction of "unknown" sites
-            turn out to be Shopify stores under a different domain.
-  tier 1  — discover and replay the page's own JSON API (deep/discovery.py) --
-            handled by runner.py before this module's tiers run at all.
-  tier 2a — embedded SSR state: many frameworks embed the whole initial
-            payload as a window global (Next.js's __NEXT_DATA__, Nuxt's
-            __NUXT__, or a bespoke __INITIAL_STATE__/__PRELOADED_STATE__/
-            Apollo/Redux store) rather than fetching it via a client-visible
-            XHR/fetch call at all -- confirmed live: tier 1's network
-            intercept found nothing on a real Next.js listing page because
-            the product grid was server-rendered directly into the initial
-            payload, never fetched client-side.
-  tier 2b — JSON-LD embedded in the page HTML (Product / ItemList schema.org)
-  tier 3  — generic DOM card extraction: every <a href> that wraps an <img>
-            and has price-like text nearby, which is what a product grid
-            tile looks like on virtually every storefront regardless of
-            framework (Salesforce Commerce Cloud, Magento, bespoke themes).
+  tier 0   — products.json probe (no browser at all): reuses the existing
+             Shopify scraper, since a meaningful fraction of "unknown" sites
+             turn out to be Shopify stores under a different domain.
+  tier 0.5 — sitemap.xml product-URL discovery (no browser, platform-
+             agnostic): most storefronts of any platform publish a
+             sitemap listing every product page directly -- cheaper and
+             more complete than any listing-grid tier, when present.
+  tier 1   — discover and replay the page's own JSON API (deep/discovery.py) --
+             handled by runner.py before this module's tiers run at all.
+  tier 2a  — embedded SSR state: many frameworks embed the whole initial
+             payload as a window global (Next.js's __NEXT_DATA__, Nuxt's
+             __NUXT__, or a bespoke __INITIAL_STATE__/__PRELOADED_STATE__/
+             Apollo/Redux store) rather than fetching it via a client-visible
+             XHR/fetch call at all -- confirmed live: tier 1's network
+             intercept found nothing on a real Next.js listing page because
+             the product grid was server-rendered directly into the initial
+             payload, never fetched client-side.
+  tier 2b  — JSON-LD embedded in the page HTML (Product / ItemList schema.org)
+  tier 3   — generic DOM card extraction: every <a href> that wraps an <img>
+             and has price-like text nearby, which is what a product grid
+             tile looks like on virtually every storefront regardless of
+             framework (Salesforce Commerce Cloud, Magento, bespoke themes).
 """
 
 import json
 import re
+from urllib.parse import urljoin, urlparse
+from xml.etree import ElementTree
 
 from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 from alaiy_os_connector_competitor_sites.api.utils.shopify_scraper import _scrape_shopify
@@ -41,6 +47,128 @@ def try_products_json(site_url, skip_urls=None, filter_jewelry=True, categories=
         return rows, skipped
     except Exception:
         return [], 0
+
+
+_SITEMAP_FETCH_TIMEOUT = 12
+_MAX_CHILD_SITEMAPS = 6  # safety cap when no child sitemap is obviously product-named
+_MAX_SITEMAP_URLS = 5000  # a catalog sitemap can legitimately be huge; cap the raw pull, not just the returned list
+_PRODUCT_URL_RE = re.compile(r"/(product|products|p)(/|$)", re.IGNORECASE)
+
+
+def _local_tag(elem):
+    """ElementTree keeps the sitemap XML namespace in every tag
+    ('{http://www.sitemaps.org/schemas/sitemap/0.9}urlset') -- strip it so
+    callers can match on the bare tag name regardless of which namespace
+    URI (or none) a given site's sitemap declares."""
+    tag = elem.tag
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def _fetch_xml(session, url):
+    try:
+        resp = session.get(url, timeout=_SITEMAP_FETCH_TIMEOUT)
+        if resp.status_code != 200 or not resp.content:
+            return None
+        return ElementTree.fromstring(resp.content)
+    except Exception:
+        return None
+
+
+def _robots_sitemap_urls(session, base):
+    try:
+        resp = session.get(urljoin(base, "/robots.txt"), timeout=_SITEMAP_FETCH_TIMEOUT)
+        if resp.status_code != 200:
+            return []
+        return [
+            line.split(":", 1)[1].strip()
+            for line in resp.text.splitlines()
+            if line.lower().startswith("sitemap:")
+        ]
+    except Exception:
+        return []
+
+
+def discover_sitemap_product_urls(site_url, limit=200):
+    """Tier 0.5. Platform-agnostic: sitemap.xml is a generic SEO convention,
+    not a Shopify-specific one -- most storefronts on any platform publish
+    one, often broken into per-content-type files (sitemap_products_1.xml,
+    products-sitemap.xml, etc). Cheaper than any listing-grid tier (no
+    browser, no pagination guessing) and often more complete, since it's
+    the site's own authoritative list of every product page. Returns a
+    deduped list of product-page URLs, or [] if no usable sitemap exists.
+    Callers are responsible for actually visiting each URL to extract the
+    row -- this only discovers WHERE the products are, not what's on them."""
+    import requests
+
+    base = f"{urlparse(site_url).scheme}://{urlparse(site_url).netloc}"
+    session = requests.Session()
+    session.headers.update({"User-Agent": "Mozilla/5.0"})
+
+    root = _fetch_xml(session, urljoin(base, "/sitemap.xml"))
+    if root is None:
+        for candidate in _robots_sitemap_urls(session, base):
+            root = _fetch_xml(session, candidate)
+            if root is not None:
+                break
+    if root is None:
+        return []
+
+    def _urls_from_urlset(node):
+        out = []
+        for url_el in node:
+            if _local_tag(url_el) != "url":
+                continue
+            for child in url_el:
+                if _local_tag(child) == "loc" and child.text:
+                    out.append(child.text.strip())
+                    break
+        return out
+
+    if _local_tag(root) == "urlset":
+        all_urls = _urls_from_urlset(root)[:_MAX_SITEMAP_URLS]
+    elif _local_tag(root) == "sitemapindex":
+        child_locs = []
+        for sm_el in root:
+            if _local_tag(sm_el) != "sitemap":
+                continue
+            for child in sm_el:
+                if _local_tag(child) == "loc" and child.text:
+                    child_locs.append(child.text.strip())
+                    break
+        # Prefer child sitemaps whose own filename says "product" -- pulling
+        # every child (page/category/blog/etc sitemaps included) on a large
+        # catalog is real wasted work for no better a result.
+        product_named = [u for u in child_locs if "product" in u.lower()]
+        to_fetch = product_named or child_locs[:_MAX_CHILD_SITEMAPS]
+
+        all_urls = []
+        for child_url in to_fetch:
+            child_root = _fetch_xml(session, child_url)
+            if child_root is not None and _local_tag(child_root) == "urlset":
+                all_urls.extend(_urls_from_urlset(child_root))
+            if len(all_urls) >= _MAX_SITEMAP_URLS:
+                break
+        all_urls = all_urls[:_MAX_SITEMAP_URLS]
+    else:
+        return []
+
+    # A sitemap fetched from a child file whose NAME already says "product"
+    # is trusted as-is (some platforms use handles with no "/product" path
+    # segment at all, e.g. /p/12345 or a bare slug) -- only path-filter when
+    # pulling from a mixed/unlabelled sitemap, so page/category/blog URLs
+    # that snuck in via the generic fallback don't get treated as products.
+    product_like = [u for u in all_urls if _PRODUCT_URL_RE.search(urlparse(u).path)]
+    candidates = product_like or all_urls
+
+    seen = set()
+    deduped = []
+    for u in candidates:
+        if u not in seen:
+            seen.add(u)
+            deduped.append(u)
+        if len(deduped) >= limit:
+            break
+    return deduped
 
 
 # Signature lists (window-global names, script MIME types) live in

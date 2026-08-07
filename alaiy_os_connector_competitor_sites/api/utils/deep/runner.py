@@ -342,6 +342,64 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
             transcript.add(f"BROWSER  launched ok  mem_available={resource_guard.mem_available_mb()}")
             context = browser_mod.new_context(browser)
 
+            # --- Tier 0.5: sitemap.xml product-URL discovery -------------------
+            # Platform-agnostic, unlike Tier 0 -- most storefronts of any
+            # platform publish a sitemap that's the site's own authoritative
+            # list of every product page, often more complete than anything a
+            # listing-grid tier can find via pagination guessing.
+            try:
+                sitemap_urls = extract.discover_sitemap_product_urls(site_url, limit=limit or 200)
+            except Exception as e:
+                sitemap_urls = []
+                transcript.add(f"TIER 0.5  sitemap discovery failed: {e}")
+
+            if sitemap_urls:
+                sitemap_urls = [u for u in sitemap_urls if u not in known_urls]
+                transcript.add(f"TIER 0.5  sitemap: {len(sitemap_urls)} new product URL(s) discovered, visiting each")
+                sitemap_page = context.new_page()
+                visited = 0
+                try:
+                    for product_url in sitemap_urls:
+                        if budget.expired():
+                            transcript.add("TIER 0.5  time budget exhausted -- stopping sitemap visits.")
+                            break
+                        if resource_guard.should_stop():
+                            transcript.add("TIER 0.5  low memory -- stopping sitemap visits.")
+                            break
+                        if limit and len(all_candidate_rows) >= limit:
+                            break
+                        t0 = time.monotonic()
+                        try:
+                            sitemap_page.goto(product_url, timeout=_DOM_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+                            sitemap_page.wait_for_timeout(600)
+                            html = sitemap_page.content()
+                        except Exception:
+                            continue
+                        visited += 1
+                        budget.record_page_duration(time.monotonic() - t0)
+
+                        # A product page's own JSON-LD is the cheapest and most
+                        # reliable single-page extraction (same block PDP
+                        # enrichment already relies on) -- fall back to embedded
+                        # SSR state only if this page doesn't carry one.
+                        ld_rows = extract.extract_json_ld(html)
+                        row = ld_rows[0] if ld_rows else None
+                        if not row:
+                            embedded_rows = extract.extract_embedded_json(sitemap_page, product_url)
+                            row = embedded_rows[0] if embedded_rows else None
+                        if row:
+                            row.setdefault("product_source_url", product_url)
+                            handle_candidate(row, site_url)
+                        if visited % 25 == 0:
+                            _heartbeat(log_name, last_beat_at, transcript=transcript, urls_found=total_urls_found)
+                finally:
+                    try:
+                        sitemap_page.close()
+                    except Exception:
+                        pass
+                transcript.add(f"TIER 0.5  sitemap: visited {visited}/{len(sitemap_urls)} page(s), "
+                                f"{len(all_candidate_rows)} accepted so far")
+
             # No explicit Listing URLs configured, but category names were --
             # find the real listing page for each one instead of requiring
             # the operator to hand-discover and paste it. Never trusted

@@ -222,6 +222,63 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
     return url, path, unwrap_key, score, kind
 
 
+def list_all_json_candidates(page, listing_url, wait_ms=4000):
+    """Diagnostic-only: same response listener as find_best_api_source, but
+    returns every scored candidate (sorted best-first) instead of just the
+    winner. For a site where the auto-picked Tier 1 API is wrong (nav menu,
+    A/B config, etc) -- shows what else was on the table so a human can
+    pick the real product endpoint instead of guessing."""
+    candidates = []
+    scanned = 0
+
+    def on_response(response):
+        nonlocal scanned
+        if scanned >= _MAX_RESPONSES_SCANNED:
+            return
+        try:
+            if response.request.resource_type not in ("xhr", "fetch"):
+                return
+            url_lower = response.url.lower()
+            host = urlparse(url_lower).netloc
+            if any(m in url_lower for m in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS):
+                return
+            if any(host.startswith(p) for p in api_signatures.ANALYTICS_SUBDOMAIN_PREFIXES):
+                return
+            if any(m in url_lower for m in api_signatures.ANALYTICS_PATH_MARKERS):
+                return
+            ctype = response.headers.get("content-type", "")
+            if "json" not in ctype:
+                return
+            scanned += 1
+            body = response.json()
+        except Exception:
+            return
+        found = best_product_array(body)
+        if found:
+            path, unwrap_key, arr, score = found
+            kind = classify_api_kind(response.request)
+            candidates.append({
+                "url": response.url, "path": path, "unwrap_key": unwrap_key,
+                "row_count": len(arr), "score": score, "kind": kind,
+                "sample_row": arr[0] if arr else None,
+            })
+
+    page.on("response", on_response)
+    try:
+        page.goto(listing_url, timeout=25000, wait_until="domcontentloaded")
+        page.wait_for_timeout(wait_ms)
+    except Exception:
+        pass
+    finally:
+        try:
+            page.remove_listener("response", on_response)
+        except Exception:
+            pass
+
+    candidates.sort(key=lambda c: (c["score"], c["row_count"]), reverse=True)
+    return candidates
+
+
 _PATH_PART_RE = re.compile(r"[^.\[\]]+|\[\d+\]")
 
 

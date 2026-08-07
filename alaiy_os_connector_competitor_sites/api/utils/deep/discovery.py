@@ -184,6 +184,12 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
                 # -- confirmed live: analytics.mejuri.com's settings
                 # endpoint scored 2 and got picked as a candidate.
                 return
+            if any(m in url_lower for m in api_signatures.ANALYTICS_PATH_MARKERS):
+                # Same proxy problem via URL PATH instead of subdomain --
+                # confirmed live: asos.com/assets/optimizely/datafiles/
+                # ....json (an A/B-test config file) got picked as the
+                # Tier 1 candidate ahead of the real catalog API.
+                return
             ctype = response.headers.get("content-type", "")
             if "json" not in ctype:
                 return

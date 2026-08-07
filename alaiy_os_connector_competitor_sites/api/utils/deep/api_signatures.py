@@ -85,6 +85,19 @@ ANALYTICS_SUBDOMAIN_PREFIXES = (
     "analytics.", "tracking.", "telemetry.", "metrics.", "pixel.", "beacon.",
 )
 
+# Same first-party-proxy problem as above, but via URL PATH instead of
+# subdomain -- confirmed live: asos.com/assets/optimizely/datafiles/....json
+# (an Optimizely A/B-testing config file, not product data) scored high
+# enough to get picked as the Tier 1 API candidate. "optimizely.com" was
+# already in ANALYTICS_TRACKER_HOST_MARKERS but that's a substring-anywhere
+# check against the URL, and this URL has no ".com" after "optimizely" --
+# it's the vendor NAME embedded in a first-party path segment, not their
+# domain. Matched as "/<marker>/" so a real product path never
+# false-positives on a coincidental substring deeper in its name.
+ANALYTICS_PATH_MARKERS = (
+    "/optimizely/", "/segment/", "/rudderstack/", "/braze/",
+)
+
 # Fuzzy key-name vocabulary for mapping an arbitrary product-API dict to our
 # canonical row shape (discovery.py's map_generic_row) -- deliberately broad
 # across the field names real commerce APIs actually use (Shopify Storefront

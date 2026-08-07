@@ -161,13 +161,27 @@ def _set_oom_score_adj(browser):
 
 def new_context(browser):
     ctx = browser.new_context(
-        viewport={"width": 1280, "height": 900},
+        viewport={"width": 1440, "height": 900},
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        extra_http_headers={
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Upgrade-Insecure-Requests": "1",
+        },
         locale="en-US",
         timezone_id="America/New_York",
         service_workers="block",
     )
     _install_resource_blocking(ctx)
     return ctx
+
 
 
 _FAKE_PIXEL_PNG = bytes.fromhex(

@@ -462,11 +462,15 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         continue
 
                     def _load_and_extract(url):
+                        response = None
                         try:
-                            page.goto(url, timeout=_DOM_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+                            response = page.goto(url, timeout=_DOM_PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
                         except Exception as e:
                             transcript.add(f"  GET {url}  nav error: {e}")
                             return [], "nav_error", None
+
+                        status_code = response.status if response else 200
+                        headers = response.headers if response else {}
 
                         # Client-rendered grids often paint products a few hundred ms
                         # after domcontentloaded (React/Vue hydration, lazy image
@@ -487,9 +491,28 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         except Exception:
                             pass
 
-                        block = blocking.classify(html)
-                        if block != blocking.OK:
-                            return [], block, html
+                        title = ""
+                        try:
+                            title = page.title()
+                        except Exception:
+                            pass
+
+                        diag = blocking.analyze_response(
+                            html=html,
+                            status_code=status_code,
+                            headers=headers,
+                            title=title,
+                            url=url,
+                        )
+
+                        if diag.is_blocked():
+                            # Detailed diagnostic log
+                            reasons_str = " · ".join(diag.reasons[:3])
+                            transcript.add(
+                                f"  DIAGNOSTICS ({diag.status})  vendor={diag.vendor}  status={diag.status_code}  "
+                                f"action={diag.recovery_action}  [{reasons_str}]"
+                            )
+                            return [], diag.status, html
 
                         # Tier 2a first -- an SSR framework's own embedded
                         # state (Next.js __NEXT_DATA__ and similar) is
@@ -528,11 +551,9 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             if source == blocking.RATE_LIMITED:
                                 transcript.add(f"  GET {url}  still rate limited after backoff — giving up on this page")
                                 return []
-                        elif source in (blocking.CHALLENGE, blocking.CAPTCHA, blocking.GEOBLOCK):
-                            # No bypass attempts, ever. Log plainly and move on —
-                            # a per-site "use Firecrawl instead" note belongs in the
-                            # final summary_line, not here.
-                            transcript.add(f"  GET {url}  BLOCKED ({source}) — no bypass attempted")
+                        elif source in (blocking.CHALLENGE, blocking.CAPTCHA, blocking.GEOBLOCK, blocking.HARD_BLOCK, blocking.AUTH_REQUIRED):
+                            # Log plainly with diagnostic context
+                            transcript.add(f"  GET {url}  RESTRICTED ({source}) — diagnostic logged, skipping page")
                             return []
                         elif not rows:
                             # Ambiguous 0-result page (not a detected block) — one
@@ -540,7 +561,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             page.wait_for_timeout(1000)
                             rows, source, html = _load_and_extract(url)
                             pages_fetched += 1
-                            if source in (blocking.RATE_LIMITED, blocking.CHALLENGE, blocking.CAPTCHA, blocking.GEOBLOCK):
+                            if source in (blocking.RATE_LIMITED, blocking.CHALLENGE, blocking.CAPTCHA, blocking.GEOBLOCK, blocking.HARD_BLOCK, blocking.AUTH_REQUIRED):
                                 transcript.add(f"  GET {url}  {source} on retry — giving up on this page")
                                 return []
                             if rows:

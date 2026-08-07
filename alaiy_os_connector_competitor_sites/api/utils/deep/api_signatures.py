@@ -160,15 +160,83 @@ EMBEDDED_JSON_GLOBALS = (
 # this type so the two extractors never double-process the same tag.
 JSON_LD_SCRIPT_TYPE = "application/ld+json"
 
-# Bot-block/rate-limit page-body markers (blocking.py's classify()).
-# Confirmed necessary by direct evidence: a real test run against the same
-# URL alternated between finding real products and finding 0, and the
-# 0-result pages turned out to be the storefront's own rate-limit response
-# body, not a rendering race. Checked narrowest-signal first regardless.
+# Access restriction and traffic verification page markers (blocking.py's classify()).
+# Checked narrowest-signal first across multi-signal HTTP status, response headers, cookies, title, and body.
+PROTECTION_VENDOR_SIGNATURES = {
+    "AKAMAI": {
+        "headers": ("server: akamaighost", "x-akamai-staging", "x-akamai-transformed"),
+        "cookies": ("ak_bmsc", "bm_sv", "bm_sz", "_abck"),
+        "markers": (
+            "access is temporarily restricted",
+            "unusual activity from your device",
+            "access denied",
+            "akamai-captcha",
+            "reference #",
+        ),
+    },
+    "CLOUDFLARE": {
+        "headers": ("server: cloudflare", "cf-ray", "cf-mitigated"),
+        "cookies": ("__cf_bm", "cf_clearance"),
+        "markers": (
+            "just a moment",
+            "cf-chl",
+            "checking your browser",
+            "attention required",
+            "cf-mitigated",
+            "turnstile",
+        ),
+    },
+    "DATADOME": {
+        "headers": ("x-datadome", "x-datadome-response"),
+        "cookies": ("datadome",),
+        "markers": (
+            "datadome",
+            "dd-captcha",
+            "geo.datadome.co",
+        ),
+    },
+    "PERIMETERX": {
+        "headers": ("x-px-",),
+        "cookies": ("_px3", "_pxhd", "_pxvid"),
+        "markers": (
+            "px-captcha",
+            "_pxAppId",
+            "access to this page has been denied",
+            "press & hold",
+        ),
+    },
+    "KASADA": {
+        "headers": ("x-ksd-",),
+        "cookies": ("k_id", "k_key"),
+        "markers": (
+            "ips.js",
+            "kasada",
+        ),
+    },
+    "AWS_WAF": {
+        "headers": ("x-amzn-waf-action",),
+        "cookies": ("aws-waf-token",),
+        "markers": (
+            "403 forbidden",
+            "awswaf",
+        ),
+    },
+    "IMPERVA": {
+        "headers": ("x-iinfo", "incap_ses"),
+        "cookies": ("incap_ses", "visid_incap"),
+        "markers": (
+            "incapsula",
+            "_incap_res",
+            "request unsuccessful. incapsula incident ID",
+        ),
+    },
+}
+
 BOT_BLOCK_RATE_LIMIT_MARKERS = (
     "local_rate_limited",
     "rate limit exceeded",
     "too many requests",
+    "429 too many requests",
 )
 BOT_BLOCK_CHALLENGE_MARKERS = (
     "just a moment",
@@ -183,12 +251,15 @@ BOT_BLOCK_CAPTCHA_MARKERS = (
     "hcaptcha",
     "recaptcha",
     "verify you are human",
+    "robot check",
 )
 BOT_BLOCK_GEOBLOCK_MARKERS = (
     "not available in your country",
     "not available in your region",
     "shipping to your location",
+    "access from your country has been blocked",
 )
+
 
 # Pagination query-param keys to try, in order (paginate.py's
 # detect_pagination). If the configured URL already carries one of these,

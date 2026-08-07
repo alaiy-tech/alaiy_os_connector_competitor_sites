@@ -68,7 +68,7 @@ def diag_page(url, wait_ms=2500):
     context = browser_mod.new_context(browser)
     page = context.new_page()
     try:
-        page.goto(url, timeout=25000, wait_until="domcontentloaded")
+        response = page.goto(url, timeout=25000, wait_until="domcontentloaded")
         page.wait_for_timeout(wait_ms)
         html = page.content()
         anchors = page.evaluate("document.querySelectorAll('a[href]').length")
@@ -88,6 +88,14 @@ def diag_page(url, wait_ms=2500):
                 for marker in ("just a moment", "cf-chl", "captcha", "access denied", "are you human")
             ),
             "html_snippet": html[:1000],
+            # Raw wire-level facts -- status/headers, not the parsed DOM --
+            # for telling "0 candidates because the extractor missed
+            # something real" apart from "0 candidates because the edge
+            # server rejected the request before any real page loaded".
+            "response_status": response.status if response else None,
+            "response_status_text": response.status_text if response else None,
+            "response_headers": response.all_headers() if response else None,
+            "request_headers": response.request.all_headers() if response else None,
         }
         print(frappe.as_json(result))
         return result

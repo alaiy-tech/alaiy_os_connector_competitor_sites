@@ -199,7 +199,7 @@ _OTHER_JSON_SCRIPT_TAGS_JS = (
 )
 
 
-def extract_embedded_json(page, base_url):
+def extract_embedded_json(page, base_url, allow_js_asset_scan=True):
     """Tier 2a. Reads every known SSR-framework window global, then every
     other non-JSON-LD JSON <script> tag on the page, and reuses
     discovery.py's generic array-scoring and row-mapping on EACH one --
@@ -212,7 +212,15 @@ def extract_embedded_json(page, base_url):
     smaller, higher-scoring-by-coincidence footer/nav-link array in
     another (say a global site-header/-footer settings payload); the
     first-hit version returned the nav links and never even looked at the
-    real one."""
+    real one.
+
+    allow_js_asset_scan=False skips Tier 2a2 (linked JS asset scanning)
+    entirely -- pass this from any caller that visits many pages in a
+    tight loop (e.g. sitemap-discovered PDP visits), where fetching up to
+    8 JS files per page multiplies into a real cost. Confirmed live: the
+    unconditional version made a worker stop responding entirely mid-run
+    (watchdog killed it, 0 products saved) on a run that ended up visiting
+    many pages with no JSON-LD."""
     from alaiy_os_connector_competitor_sites.api.utils.deep import discovery
 
     def _try(data):
@@ -258,15 +266,25 @@ def extract_embedded_json(page, base_url):
     # Same "find the product array in a JSON blob" problem, just sourced
     # from fetched JS text instead of the DOM -- generic across platforms,
     # not a framework-specific guess.
-    for js_text in _fetch_linked_js_assets(page):
-        for literal in _find_json_literals_near_markers(js_text):
-            try:
-                data = json.loads(literal)
-            except (ValueError, TypeError):
-                continue
-            result = _try(data)
-            if result and (best is None or result[0] > best[0] or (result[0] == best[0] and len(result[1]) > len(best[1]))):
-                best = result
+    #
+    # Only attempted when nothing else scored ANYTHING -- confirmed live,
+    # running this unconditionally on every call (including once per PDP
+    # visit during sitemap-tier fallback, potentially hundreds of times in
+    # one run) fetches up to 8 JS files EACH time and was expensive enough
+    # to make the worker stop responding entirely (watchdog killed the
+    # run, 0 products saved). The window-global/inline-script sources
+    # above already cover the overwhelming majority of real pages; this is
+    # a last-resort, not a routine check.
+    if best is None and allow_js_asset_scan:
+        for js_text in _fetch_linked_js_assets(page):
+            for literal in _find_json_literals_near_markers(js_text):
+                try:
+                    data = json.loads(literal)
+                except (ValueError, TypeError):
+                    continue
+                result = _try(data)
+                if result and (best is None or result[0] > best[0] or (result[0] == best[0] and len(result[1]) > len(best[1]))):
+                    best = result
 
     return best[1] if best else []
 
@@ -274,8 +292,9 @@ def extract_embedded_json(page, base_url):
 _JS_ASSET_IGNORE_MARKERS = (
     "vendor", "polyfill", "runtime", "chunk-common", "webpack", "framework",
 )
-_MAX_JS_ASSETS_FETCHED = 8
-_MAX_JS_ASSET_BYTES = 2_000_000  # a real data payload lives well under this; skip pathological bundle sizes
+_MAX_JS_ASSETS_FETCHED = 4  # tightened after a live run showed the worker going unresponsive
+_MAX_JS_ASSET_BYTES = 800_000  # a real data payload lives well under this; skip pathological bundle sizes
+_JS_ASSET_FETCH_TIMEOUT = 6
 _JS_LITERAL_MARKER_RE = re.compile(
     r"(?:" + "|".join(re.escape(m) for m in api_signatures.EMBEDDED_JSON_GLOBALS)
     + r"|products|productlist|catalog|itemlist)\s*[:=]\s*", re.IGNORECASE,
@@ -307,7 +326,7 @@ def _fetch_linked_js_assets(page):
     texts = []
     for src in candidates:
         try:
-            resp = requests.get(src, timeout=8, stream=True)
+            resp = requests.get(src, timeout=_JS_ASSET_FETCH_TIMEOUT, stream=True)
             if resp.status_code != 200:
                 continue
             content = resp.raw.read(_MAX_JS_ASSET_BYTES + 1, decode_content=True)

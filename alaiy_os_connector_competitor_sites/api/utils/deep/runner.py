@@ -385,7 +385,13 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                         ld_rows = extract.extract_json_ld(html)
                         row = ld_rows[0] if ld_rows else None
                         if not row:
-                            embedded_rows = extract.extract_embedded_json(sitemap_page, product_url)
+                            # allow_js_asset_scan=False -- this runs once per
+                            # PDP in the sitemap loop, potentially hundreds
+                            # of times; the JS-asset tier fetches up to 8
+                            # files per call and is only worth that cost
+                            # once per LISTING page, not once per product.
+                            embedded_rows = extract.extract_embedded_json(
+                                sitemap_page, product_url, allow_js_asset_scan=False)
                             row = embedded_rows[0] if embedded_rows else None
                         if row:
                             row.setdefault("product_source_url", product_url)

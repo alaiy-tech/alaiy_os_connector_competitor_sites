@@ -186,9 +186,10 @@ def capture_best_api_candidate(page, listing_url, wait_ms=6000):
                 return
             if any(m in url_lower for m in api_signatures.ANALYTICS_PATH_MARKERS):
                 # Same proxy problem via URL PATH instead of subdomain --
-                # confirmed live: asos.com/assets/optimizely/datafiles/
-                # ....json (an A/B-test config file) got picked as the
-                # Tier 1 candidate ahead of the real catalog API.
+                # confirmed live: a real test site's own
+                # /assets/optimizely/datafiles/....json (an A/B-test
+                # config file) got picked as the Tier 1 candidate ahead
+                # of the real catalog API.
                 return
             ctype = response.headers.get("content-type", "")
             if "json" not in ctype:
@@ -266,6 +267,12 @@ def list_all_json_candidates(page, listing_url, wait_ms=4000):
     page.on("response", on_response)
     try:
         page.goto(listing_url, timeout=25000, wait_until="domcontentloaded")
+        page.wait_for_timeout(wait_ms)
+        # Diagnostic-only probe: some sites (hypothesis on a real test
+        # site, not yet proven) only fire the real product-grid fetch once
+        # the grid scrolls into view, not on initial load. Scroll and give
+        # it a second window to see if a NEW candidate shows up.
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         page.wait_for_timeout(wait_ms)
     except Exception:
         pass

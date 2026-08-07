@@ -68,6 +68,10 @@ ANALYTICS_TRACKER_HOST_MARKERS = (
     "pubmatic.com", "quantserve.com", "scorecardresearch.com",
     "fullstory.com", "amplitude.com", "mixpanel.com", "dynatrace.com",
     "onetrust.com", "clarity.ms", "tealiumiq.com",
+    # Akamai mPulse / Boomerang real-user-monitoring beacon -- confirmed
+    # live: c.go-mpulse.net/api/config.json scored 2 on a resource-timing
+    # array and got picked as a Tier 1 candidate ahead of the real API.
+    "go-mpulse.net", "akstat.io",
 )
 
 # First-party analytics/CDP proxy convention -- many sites route a
@@ -86,9 +90,10 @@ ANALYTICS_SUBDOMAIN_PREFIXES = (
 )
 
 # Same first-party-proxy problem as above, but via URL PATH instead of
-# subdomain -- confirmed live: asos.com/assets/optimizely/datafiles/....json
-# (an Optimizely A/B-testing config file, not product data) scored high
-# enough to get picked as the Tier 1 API candidate. "optimizely.com" was
+# subdomain -- confirmed live: a real test site's own
+# /assets/optimizely/datafiles/....json (an Optimizely A/B-testing config
+# file, not product data) scored high enough to get picked as the Tier 1
+# API candidate. "optimizely.com" was
 # already in ANALYTICS_TRACKER_HOST_MARKERS but that's a substring-anywhere
 # check against the URL, and this URL has no ".com" after "optimizely" --
 # it's the vendor NAME embedded in a first-party path segment, not their

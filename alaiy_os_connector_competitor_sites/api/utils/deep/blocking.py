@@ -8,15 +8,9 @@ bypasses.
 
 import dataclasses
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-from alaiy_os_connector_competitor_sites.api.utils.deep.api_signatures import (
-    BOT_BLOCK_CAPTCHA_MARKERS,
-    BOT_BLOCK_CHALLENGE_MARKERS,
-    BOT_BLOCK_GEOBLOCK_MARKERS,
-    BOT_BLOCK_RATE_LIMIT_MARKERS,
-    PROTECTION_VENDOR_SIGNATURES,
-)
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 
 # Core Status Categories
 RATE_LIMITED = "rate_limited"

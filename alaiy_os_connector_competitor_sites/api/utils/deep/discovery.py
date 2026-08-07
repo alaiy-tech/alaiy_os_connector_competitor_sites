@@ -31,15 +31,26 @@ _MAX_RESPONSES_SCANNED = 60  # safety cap -- a chatty page can fire far more XHR
 
 
 def _score_dict_keys(d):
-    """How many distinct product-field categories this dict's keys touch."""
+    """Returns (hit_count, hit_categories) -- how many distinct product-
+    field categories this dict's keys touch, and which ones."""
     if not isinstance(d, dict):
-        return 0
+        return 0, set()
     keys_lower = {k.lower() for k in d.keys()}
-    hits = 0
-    for hints in _PRODUCT_KEY_HINTS.values():
-        if any(any(h in k for h in hints) for k in keys_lower):
-            hits += 1
-    return hits
+    hit_categories = {
+        category for category, hints in _PRODUCT_KEY_HINTS.items()
+        if any(any(h in k for h in hints) for k in keys_lower)
+    }
+    return len(hit_categories), hit_categories
+
+
+# name+url alone is not enough signal -- confirmed live: a nav-menu tree
+# and a plain footer link list ({"title": ..., "url": ...}) both hit
+# exactly this pair and cleared _MIN_SCORE, getting picked ahead of the
+# real product array on the same page. A real product row almost always
+# carries a price or an image; a navigational link never does. Require
+# at least one of those alongside the base score, not just any 2
+# categories.
+_REQUIRE_ONE_OF = {"price", "image"}
 
 
 _MAX_TREE_DEPTH = 40  # a real product-list array never sits this deep; caps runaway walks too
@@ -94,13 +105,16 @@ def _best_row_shape(item):
     dict itself, so scoring the edge dict directly finds nothing even though
     real data is right there. Returns (unwrap_key, score) for whichever shape
     (the item itself, or a nested dict inside a thin wrapper) scores best."""
-    best_key, best_score = None, _score_dict_keys(item)
+    best_score, best_categories = _score_dict_keys(item)
+    best_key = None
     if len(item) <= _MAX_UNWRAP_KEYS:
         for k, v in item.items():
             if isinstance(v, dict):
-                score = _score_dict_keys(v)
+                score, categories = _score_dict_keys(v)
                 if score > best_score:
-                    best_key, best_score = k, score
+                    best_key, best_score, best_categories = k, score, categories
+    if best_score >= _MIN_SCORE and not (best_categories & _REQUIRE_ONE_OF):
+        best_score = 0
     return best_key, best_score
 
 

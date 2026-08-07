@@ -424,6 +424,18 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                     except Exception as e:
                         transcript.add(f"  TIER 1  API discovery failed: {e}")
 
+                    # Confirmed live: Tier 1 can find A JSON API and commit
+                    # to it even when that API isn't the product one (e.g.
+                    # a nav-menu tree scoring just high enough to win with
+                    # nothing better on the page) -- it then returns 0 rows
+                    # and, because this branch always `continue`d, the DOM
+                    # fallback tiers below never got a chance to run at
+                    # all. Only commit to Tier 1 (and skip everything else)
+                    # once it has actually produced at least one real row --
+                    # a wrong pick with 0 output now falls through to the
+                    # embedded-json/JSON-LD/DOM chain instead of ending the
+                    # page with nothing.
+                    tier1_found_any = False
                     if api_candidate:
                         api_url, array_path, unwrap_key, score, api_kind = api_candidate
                         transcript.add(
@@ -447,6 +459,7 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                             )
                             for _u, rows in paginate.iter_pages(api_url, scheme, fetch_api):
                                 for row in rows:
+                                    tier1_found_any = True
                                     handle_candidate(row, listing_url)
                                 _heartbeat(log_name, last_beat_at, transcript=transcript, urls_found=total_urls_found)
                                 reason = _pagination_break_reason()
@@ -458,8 +471,16 @@ def scrape_deep(site_url, site_name, scrape_id, log_name=None, listing_urls=None
                                 f"PAGINATION  (api) no verified scheme — using the {len(first_page_rows)} row(s) already found."
                             )
                             for row in first_page_rows:
+                                tier1_found_any = True
                                 handle_candidate(row, listing_url)
+
+                    if tier1_found_any:
                         continue
+                    if api_candidate:
+                        transcript.add(
+                            "TIER 1  candidate produced 0 real rows — falling through to "
+                            "embedded-json/JSON-LD/DOM extraction."
+                        )
 
                     def _load_and_extract(url):
                         response = None

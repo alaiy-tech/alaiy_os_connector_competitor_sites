@@ -4,13 +4,26 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import frappe
 
-from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _log_error
 
 # Keyword list lives in api_signatures.py alongside every other known-
 # signature list this connector uses (validate.py's is_jewelry_extended
 # extends this same list further for general fashion-site categories).
-_JEWELRY_RE = re.compile(r"\b(" + "|".join(api_signatures.JEWELRY_KEYWORDS) + r")\b", re.IGNORECASE)
+# Built lazily, not at import time: deep/api_signatures.py lives under the
+# `deep` package, and importing it here at module level triggers
+# deep/__init__.py -> deep.runner -> deep.extract, both of which import
+# names from this same module -- a real circular import, confirmed live
+# on stellar's first deploy ("cannot import name '_strip_html'/
+# '_scrape_shopify' from partially initialized module").
+_JEWELRY_RE = None
+
+
+def _jewelry_re():
+    global _JEWELRY_RE
+    if _JEWELRY_RE is None:
+        from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
+        _JEWELRY_RE = re.compile(r"\b(" + "|".join(api_signatures.JEWELRY_KEYWORDS) + r")\b", re.IGNORECASE)
+    return _JEWELRY_RE
 
 
 def _normalize_tags(tags):
@@ -27,7 +40,7 @@ def _normalize_tags(tags):
 
 def _is_jewelry(product_type, tags, title):
     haystack = " ".join([product_type or "", title or ""] + _normalize_tags(tags))
-    return bool(_JEWELRY_RE.search(haystack))
+    return bool(_jewelry_re().search(haystack))
 
 
 def _strip_html(html):

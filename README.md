@@ -1,6 +1,6 @@
-### Stellar Brands
+### Alaiy OS Connector Competitor Sites
 
-Jewelry Feeder Platform
+Competitor product site scraper.
 
 ### Installation
 
@@ -8,8 +8,8 @@ You can install this app using the [bench](https://github.com/frappe/bench) CLI:
 
 ```bash
 cd $PATH_TO_YOUR_BENCH
-bench get-app $URL_OF_THIS_REPO --branch develop
-bench install-app stellar_brands
+bench get-app $URL_OF_THIS_REPO --branch main
+bench install-app alaiy_os_connector_competitor_sites
 ```
 
 ### Contributing
@@ -17,7 +17,7 @@ bench install-app stellar_brands
 This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
 
 ```bash
-cd apps/stellar_brands
+cd apps/alaiy_os_connector_competitor_sites
 pre-commit install
 ```
 

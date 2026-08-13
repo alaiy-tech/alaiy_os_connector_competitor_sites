@@ -22,19 +22,12 @@ import signal
 
 import frappe
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
+
 _REDIS_SLOT_KEY = "deep_scrape:browser_slot"
 _REDIS_BROKEN_KEY = "deep_scrape:browser_broken"
 _SLOT_TTL_SECONDS = 180
 _BROKEN_TTL_SECONDS = 300
-
-_TRACKER_HOST_SUBSTRINGS = (
-    "google-analytics.com", "googletagmanager.com", "doubleclick.net",
-    "facebook.net", "facebook.com/tr", "hotjar.com", "segment.com",
-    "segment.io", "optimizely.com", "criteo.com", "taboola.com",
-    "newrelic.com", "datadoghq.com", "cdn.cookielaw.org", "klaviyo.com",
-    "bat.bing.com", "snap.com", "pinterest.com", "yotpo.com",
-    "bazaarvoice.com", "mparticle.com",
-)
 
 _LAUNCH_ARGS = [
     "--no-sandbox",
@@ -128,15 +121,11 @@ def resolve_headless_shell_path(playwright):
     correct, just heavier). Never raises — a missing/odd install shows up
     as a BrowserLaunchError at actual launch time instead."""
     try:
-        path = playwright.chromium.executable_path
-        if path and "headless_shell" in path.lower():
-            return path
-        # Playwright 1.61 exposes headless-shell as a distinct browser type
-        # in some installs; executable_path above already returns the
-        # right thing for the "chromium" channel on this box (confirmed:
-        # chromium_headless_shell-1228 is what get installed here for the
+        # Playwright's `chromium` channel already resolves to the
+        # headless-shell binary on this box's install (confirmed:
+        # chromium_headless_shell-1228 is what gets installed here for the
         # `chromium` build without the `channel="chrome"` argument).
-        return path
+        return playwright.chromium.executable_path
     except Exception:
         return None
 
@@ -172,7 +161,20 @@ def _set_oom_score_adj(browser):
 
 def new_context(browser):
     ctx = browser.new_context(
-        viewport={"width": 1280, "height": 900},
+        viewport={"width": 1440, "height": 900},
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        extra_http_headers={
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Upgrade-Insecure-Requests": "1",
+        },
         locale="en-US",
         timezone_id="America/New_York",
         service_workers="block",
@@ -181,13 +183,33 @@ def new_context(browser):
     return ctx
 
 
+
+_FAKE_PIXEL_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "89000000034944415478da6360000000020001e221bc330000000049454e44ae426082"
+)
+
+
 def _install_resource_blocking(context):
     def handler(route, request):
         rtype = request.resource_type
         url = request.url
         if rtype in ("image", "media", "font"):
+            # route.abort() looks like a real network failure to the page's
+            # own JS -- confirmed live: Next.js's <img> treated an aborted
+            # image request as a load error and overwrote its own real
+            # srcset/src with an error-fallback URL before extraction ever
+            # ran, so the "saved bandwidth" cost us the real image URL
+            # entirely. Fulfilling with a tiny fake image instead still
+            # avoids downloading real image bytes, but looks like a normal
+            # successful load to the page, so it never rewrites the
+            # attributes we're about to read. Image *URLs* still always
+            # come from DOM attributes (data-src/srcset), never from
+            # decoding this fake response.
+            if rtype == "image":
+                return route.fulfill(status=200, content_type="image/png", body=_FAKE_PIXEL_PNG)
             return route.abort()
-        if any(host in url for host in _TRACKER_HOST_SUBSTRINGS):
+        if any(host in url for host in api_signatures.ANALYTICS_TRACKER_HOST_MARKERS):
             return route.abort()
         return route.continue_()
 

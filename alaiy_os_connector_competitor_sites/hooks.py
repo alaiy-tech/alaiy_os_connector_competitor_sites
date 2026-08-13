@@ -31,10 +31,10 @@ after_install = "alaiy_os_connector_competitor_sites.setup.install.after_install
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
-# 		"name": "stellar_brands",
+# 		"name": "competitor_sites",
 # 		"logo": "/assets/alaiy_os_connector_competitor_sites/logo.png",
-# 		"title": "Stellar Brands",
-# 		"route": "/stellar_brands",
+# 		"title": "Competitor Sites",
+# 		"route": "/competitor_sites",
 # 		"has_permission": "alaiy_os_connector_competitor_sites.api.permission.has_app_permission"
 # 	}
 # ]
@@ -43,15 +43,15 @@ after_install = "alaiy_os_connector_competitor_sites.setup.install.after_install
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/alaiy_os_connector_competitor_sites/css/stellar_brands.css"
-# app_include_js = "/assets/alaiy_os_connector_competitor_sites/js/stellar_brands.js"
+# app_include_css = "/assets/alaiy_os_connector_competitor_sites/css/competitor_sites.css"
+# app_include_js = "/assets/alaiy_os_connector_competitor_sites/js/competitor_sites.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/alaiy_os_connector_competitor_sites/css/stellar_brands.css"
-# web_include_js = "/assets/alaiy_os_connector_competitor_sites/js/stellar_brands.js"
+# web_include_css = "/assets/alaiy_os_connector_competitor_sites/css/competitor_sites.css"
+# web_include_js = "/assets/alaiy_os_connector_competitor_sites/js/competitor_sites.js"
 
 # include custom scss in every website theme (without file extension ".scss")
-# website_theme_scss = "stellar_brands/public/scss/website"
+# website_theme_scss = "competitor_sites/public/scss/website"
 
 # include js, css files in header of web form
 # webform_include_js = {"doctype": "public/js/doctype.js"}
@@ -69,7 +69,7 @@ after_install = "alaiy_os_connector_competitor_sites.setup.install.after_install
 # Svg Icons
 # ------------------
 # include app icons in desk
-# app_include_icons = "stellar_brands/public/icons.svg"
+# app_include_icons = "competitor_sites/public/icons.svg"
 
 # Home Pages
 # ----------
@@ -93,43 +93,43 @@ after_install = "alaiy_os_connector_competitor_sites.setup.install.after_install
 
 # add methods and filters to jinja environment
 # jinja = {
-# 	"methods": "stellar_brands.utils.jinja_methods",
-# 	"filters": "stellar_brands.utils.jinja_filters"
+# 	"methods": "competitor_sites.utils.jinja_methods",
+# 	"filters": "competitor_sites.utils.jinja_filters"
 # }
 
 # Installation
 # ------------
 
-# before_install = "stellar_brands.install.before_install"
-# after_install = "stellar_brands.install.after_install"
+# before_install = "competitor_sites.install.before_install"
+# after_install = "competitor_sites.install.after_install"
 
 # Uninstallation
 # ------------
 
-# before_uninstall = "stellar_brands.uninstall.before_uninstall"
-# after_uninstall = "stellar_brands.uninstall.after_uninstall"
+# before_uninstall = "competitor_sites.uninstall.before_uninstall"
+# after_uninstall = "competitor_sites.uninstall.after_uninstall"
 
 # Integration Setup
 # ------------------
 # To set up dependencies/integrations with other apps
 # Name of the app being installed is passed as an argument
 
-# before_app_install = "stellar_brands.utils.before_app_install"
-# after_app_install = "stellar_brands.utils.after_app_install"
+# before_app_install = "competitor_sites.utils.before_app_install"
+# after_app_install = "competitor_sites.utils.after_app_install"
 
 # Integration Cleanup
 # -------------------
 # To clean up dependencies/integrations with other apps
 # Name of the app being uninstalled is passed as an argument
 
-# before_app_uninstall = "stellar_brands.utils.before_app_uninstall"
-# after_app_uninstall = "stellar_brands.utils.after_app_uninstall"
+# before_app_uninstall = "competitor_sites.utils.before_app_uninstall"
+# after_app_uninstall = "competitor_sites.utils.after_app_uninstall"
 
 # Desk Notifications
 # ------------------
 # See frappe.core.notifications.get_notification_config
 
-# notification_config = "stellar_brands.notifications.get_notification_config"
+# notification_config = "competitor_sites.notifications.get_notification_config"
 
 # Permissions
 # -----------
@@ -175,20 +175,20 @@ scheduler_events = {
 # Testing
 # -------
 
-# before_tests = "stellar_brands.install.before_tests"
+# before_tests = "competitor_sites.install.before_tests"
 
 # Overriding Methods
 # ------------------------------
 #
 # override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "stellar_brands.event.get_events"
+# 	"frappe.desk.doctype.event.event.get_events": "competitor_sites.event.get_events"
 # }
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps
 # override_doctype_dashboards = {
-# 	"Task": "stellar_brands.task.get_dashboard_data"
+# 	"Task": "competitor_sites.task.get_dashboard_data"
 # }
 
 # exempt linked doctypes from being automatically cancelled
@@ -202,13 +202,13 @@ scheduler_events = {
 
 # Request Events
 # ----------------
-# before_request = ["stellar_brands.utils.before_request"]
-# after_request = ["stellar_brands.utils.after_request"]
+# before_request = ["competitor_sites.utils.before_request"]
+# after_request = ["competitor_sites.utils.after_request"]
 
 # Job Events
 # ----------
-# before_job = ["stellar_brands.utils.before_job"]
-# after_job = ["stellar_brands.utils.after_job"]
+# before_job = ["competitor_sites.utils.before_job"]
+# after_job = ["competitor_sites.utils.after_job"]
 
 # User Data Protection
 # --------------------
@@ -238,7 +238,7 @@ scheduler_events = {
 # --------------------------------
 
 # auth_hooks = [
-# 	"stellar_brands.auth.validate"
+# 	"competitor_sites.auth.validate"
 # ]
 
 # Automatically update python controller files with type annotations for this app.

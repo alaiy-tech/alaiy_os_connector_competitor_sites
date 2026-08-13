@@ -248,9 +248,15 @@
         </div>
         <div class="rq-modal-field">
           <div class="rq-modal-field-label">Price</div>
-          <div class="rq-modal-field-value rq-modal-price">${p.source_price ? "$" + _esc(p.source_price) : "—"}</div>
+          <div class="rq-modal-field-value rq-modal-price">${p.source_price ? _esc(p.source_price) : "—"}</div>
         </div>
       </div>
+      ${p.description
+			? `<div class="rq-modal-field rq-modal-field-full">
+        <div class="rq-modal-field-label">Description</div>
+        <div class="rq-modal-field-value">${_esc(p.description)}</div>
+      </div>`
+			: ""}
       ${p.source_product_url
 			? `<a class="rq-modal-source-link" href="${_esc(p.source_product_url)}" target="_blank">Open on ${_esc(p.source_site || "Source")} ↗</a>`
 			: ""}

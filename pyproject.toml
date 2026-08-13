@@ -11,6 +11,8 @@ dependencies = [
     # "frappe~=15.0.0" # Installed and managed by bench.
     "firecrawl-py",
     "Pillow",
+    "playwright", # Deep scraper (api/utils/deep/) -- also needs the browser binary:
+                  # `bench execute alaiy_os_connector_competitor_sites.setup.install.ensure_playwright_browser`
 ]
 
 [build-system]
@@ -21,9 +23,27 @@ build-backend = "flit_core.buildapi"
 [tool.bench.dev-dependencies]
 # package_name = "~=1.1.0"
 
-# These apt dependencies will be installed from Ubuntu repositories when you host your app on Frappe Cloud
+# These apt dependencies will be installed from Ubuntu repositories when you host your app on Frappe Cloud.
+# Chromium (Deep scraper, api/utils/deep/) needs these shared libraries to launch even headless --
+# confirmed missing on a fresh server: "error while loading shared libraries: libasound.so.2".
+# Self-hosted (non-Frappe-Cloud) deploys: this list is NOT auto-applied by plain bench/apt -- run
+# `bench execute alaiy_os_connector_competitor_sites.setup.install.ensure_playwright_browser` instead,
+# which shells out to `playwright install-deps` (the same packages, resolved for the exact Chromium build).
 [deploy.dependencies.apt]
-packages = []
+packages = [
+    "libasound2t64",
+    "libnss3",
+    "libatk-bridge2.0-0",
+    "libcups2",
+    "libxkbcommon0",
+    "libxcomposite1",
+    "libxdamage1",
+    "libxfixes3",
+    "libxrandr2",
+    "libgbm1",
+    "libpango-1.0-0",
+    "libcairo2",
+]
 
 [tool.ruff]
 line-length = 110

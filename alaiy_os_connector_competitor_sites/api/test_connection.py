@@ -4,8 +4,8 @@ from firecrawl import V1FirecrawlApp as FirecrawlApp
 
 @frappe.whitelist()
 def test_connection():
-    settings = frappe.get_single("Stellar Brands Connector Settings")
-    api_key = settings.get_password("sb_firecrawl_api_key")
+    settings = frappe.get_single("Competitor Sites Connector Settings")
+    api_key = settings.get_password("cs_firecrawl_api_key")
 
     if not api_key:
         return {"success": False, "message": "Firecrawl API key is not set"}

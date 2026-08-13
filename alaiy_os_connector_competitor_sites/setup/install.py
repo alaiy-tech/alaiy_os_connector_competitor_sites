@@ -1,4 +1,47 @@
+import subprocess
+import sys
+
 import frappe
+
+
+def ensure_playwright_browser():
+    """One-time server step for the Deep scraper (api/utils/deep/) -- installs
+    the chromium-headless-shell binary the `playwright` pip package needs,
+    AND the OS shared libraries Chromium needs to actually launch (confirmed
+    missing live: `chrome-headless-shell: error while loading shared
+    libraries: libasound.so.2` on a fresh server -- the binary alone isn't
+    enough). Not wired into after_install/after_migrate: those hooks fire on
+    every full-site migrate across every installed app, and a network/apt
+    install has no business running on unrelated deploys. Run once by hand:
+
+        bench execute alaiy_os_connector_competitor_sites.setup.install.ensure_playwright_browser
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium-headless-shell"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        frappe.throw(f"playwright install failed:\n{result.stdout}\n{result.stderr}")
+    print(result.stdout)
+
+    # Needs root -- requires passwordless sudo for the deploy user (already
+    # the case for the `ubuntu` user on these servers). Not fatal if it
+    # can't run: reported clearly so the operator finishes it by hand
+    # instead of the failure surfacing later, confusingly, from inside an
+    # actual scrape run.
+    deps_result = subprocess.run(
+        ["sudo", "-n", sys.executable, "-m", "playwright", "install-deps", "chromium-headless-shell"],
+        capture_output=True, text=True,
+    )
+    if deps_result.returncode != 0:
+        print(
+            "WARNING: could not auto-install OS-level Chromium dependencies "
+            "(needs passwordless sudo for this user). Run by hand:\n"
+            "  sudo playwright install-deps chromium-headless-shell\n"
+            f"stdout: {deps_result.stdout}\nstderr: {deps_result.stderr}"
+        )
+    else:
+        print(deps_result.stdout)
 
 
 def sync_connector_registry():
@@ -39,7 +82,7 @@ def sync_connector_registry():
 
 def _fix_settings_as_single():
     frappe.db.sql(
-        "UPDATE `tabDocType` SET issingle=1 WHERE name='Stellar Brands Connector Settings' AND issingle=0"
+        "UPDATE `tabDocType` SET issingle=1 WHERE name='Competitor Sites Connector Settings' AND issingle=0"
     )
     frappe.db.commit()
 
@@ -84,7 +127,7 @@ def _update_alaiy_os_sidebar():
         _inject_sidebar()
     except Exception:
         frappe.log_error(
-            title="Stellar Brands connector: sidebar update failed",
+            title="Competitor Sites connector: sidebar update failed",
             message=frappe.get_traceback(),
         )
 
@@ -102,6 +145,6 @@ def _inject_sidebar():
         frappe.db.commit()
     except Exception:
         frappe.log_error(
-            title="Stellar Brands: sidebar injection failed",
+            title="Competitor Sites: sidebar injection failed",
             message=frappe.get_traceback(),
         )

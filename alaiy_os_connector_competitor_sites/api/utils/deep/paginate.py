@@ -10,11 +10,8 @@ wrong guess is caught after 2 requests, not after wasting the whole budget.
 
 from urllib.parse import parse_qsl, urlparse
 
+from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
 from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import merge_query, canonical_url
-
-# Checked in this order. If the configured URL already carries one of these,
-# it goes first (reusing what's already there rather than guessing).
-_CANDIDATE_KEYS = ["page", "p", "page_num", "pagenum", "start", "offset"]
 
 _OVERLAP_REJECT_THRESHOLD = 0.9  # page2 sharing >90% of page1's rows = same page, wrong key
 
@@ -52,21 +49,22 @@ def detect_pagination(base_url, fetch_page):
     # Salesforce Commerce Cloud sites use — e.g. Penningtons.
     if "start" in existing_query and "sz" in existing_query:
         page_size = int(existing_query["sz"]) if str(existing_query["sz"]).isdigit() else 48
-        ok, page1_rows = _verify_offset(base_url, fetch_page, "start", 0, page_size)
+        ok, page1_rows = _verify(base_url, fetch_page, "start", 0, page_size)
         if page1_rows:
             first_page_rows = page1_rows
         if ok:
             return {"key": "start", "start": 0, "step": page_size, "page_size": page_size}, page1_rows
 
-    ordered_keys = [k for k in _CANDIDATE_KEYS if k in existing_query] + [
-        k for k in _CANDIDATE_KEYS if k not in existing_query
+    candidate_keys = api_signatures.PAGINATION_CANDIDATE_KEYS
+    ordered_keys = [k for k in candidate_keys if k in existing_query] + [
+        k for k in candidate_keys if k not in existing_query
     ]
 
     page1_rows_cache = None
     for key in ordered_keys:
-        base_page = 0 if key in ("start", "offset") else 1
+        base_page = 0 if key in api_signatures.PAGINATION_ZERO_INDEXED_KEYS else 1
         step = 1
-        ok, page1_rows = _verify_numeric(base_url, fetch_page, key, base_page, step, page1_rows_cache)
+        ok, page1_rows = _verify(base_url, fetch_page, key, base_page, step, page1_rows_cache)
         if page1_rows_cache is None:
             page1_rows_cache = page1_rows
             if page1_rows:
@@ -77,31 +75,18 @@ def detect_pagination(base_url, fetch_page):
     return None, first_page_rows
 
 
-def _verify_numeric(base_url, fetch_page, key, base_page, step, page1_rows_cache):
-    page1_url = merge_query(base_url, **{key: base_page})
+def _verify(base_url, fetch_page, key, base, step, page1_rows_cache=None):
+    """Fetches page1/page2 for the given key+step and checks their row-sets
+    actually differ — shared by both the numeric-key path and the
+    start=&sz= offset special-case, which only ever differed in what values
+    they passed in, not in the check itself."""
+    page1_url = merge_query(base_url, **{key: base})
     page1_rows = page1_rows_cache if page1_rows_cache is not None else (fetch_page(page1_url) or [])
     page1_keys = _row_key_set(page1_rows)
     if not page1_keys:
         return False, page1_rows
 
-    page2_url = merge_query(base_url, **{key: base_page + step})
-    page2_rows = fetch_page(page2_url) or []
-    page2_keys = _row_key_set(page2_rows)
-    if not page2_keys:
-        return False, page1_rows
-
-    overlap = _overlap(page1_keys, page2_keys)
-    return overlap < _OVERLAP_REJECT_THRESHOLD, page1_rows
-
-
-def _verify_offset(base_url, fetch_page, key, base_start, page_size):
-    page1_url = merge_query(base_url, **{key: base_start})
-    page1_rows = fetch_page(page1_url) or []
-    page1_keys = _row_key_set(page1_rows)
-    if not page1_keys:
-        return False, page1_rows
-
-    page2_url = merge_query(base_url, **{key: base_start + page_size})
+    page2_url = merge_query(base_url, **{key: base + step})
     page2_rows = fetch_page(page2_url) or []
     page2_keys = _row_key_set(page2_rows)
     if not page2_keys:

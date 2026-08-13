@@ -8,7 +8,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        files: "stellar_brands.*"
+        files: "alaiy_os_connector_competitor_sites.*"
         exclude: ".*json$|.*txt$|.*csv|.*md|.*svg"
       - id: check-merge-conflict
       - id: check-ast
@@ -38,11 +38,11 @@ repos:
         # Ignore any files that might contain jinja / bundles
         exclude: |
             (?x)^(
-                stellar_brands/public/dist/.*|
+                alaiy_os_connector_competitor_sites/public/dist/.*|
                 .*node_modules.*|
                 .*boilerplate.*|
-                stellar_brands/templates/includes/.*|
-                stellar_brands/public/js/lib/.*
+                alaiy_os_connector_competitor_sites/templates/includes/.*|
+                alaiy_os_connector_competitor_sites/public/js/lib/.*
             )$
 
 
@@ -55,12 +55,12 @@ repos:
         # Ignore any files that might contain jinja / bundles
         exclude: |
             (?x)^(
-                stellar_brands/public/dist/.*|
+                alaiy_os_connector_competitor_sites/public/dist/.*|
                 cypress/.*|
                 .*node_modules.*|
                 .*boilerplate.*|
-                stellar_brands/templates/includes/.*|
-                stellar_brands/public/js/lib/.*
+                alaiy_os_connector_competitor_sites/templates/includes/.*|
+                alaiy_os_connector_competitor_sites/public/js/lib/.*
             )$
 
 ci:

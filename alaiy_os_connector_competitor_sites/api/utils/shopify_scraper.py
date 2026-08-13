@@ -1,5 +1,8 @@
 import re
+
 import frappe
+
+from alaiy_os_connector_competitor_sites.api.utils.scrape_utils import _log_error
 
 _JEWELRY_KEYWORDS = [
     "jewelry", "jewellery", "ring", "rings", "necklace", "necklaces",
@@ -74,7 +77,7 @@ def _fetch_products(session, endpoint, skip_urls=None):
         except ValueError:
             break
         except Exception as e:
-            frappe.log_error(f"Shopify fetch failed: {e}", "Scraper")
+            _log_error("Scraper: Shopify fetch failed", f"{next_url}: {e}")
             break
 
         if not batch:

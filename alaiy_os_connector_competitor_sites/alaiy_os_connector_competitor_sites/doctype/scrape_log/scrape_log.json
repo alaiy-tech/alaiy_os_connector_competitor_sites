@@ -9,11 +9,13 @@
   "site_url",
   "scrape_id",
   "status",
+  "summary_line",
   "method_used",
   "urls_found",
   "already_in_db",
   "products_saved",
   "started_at",
+  "last_heartbeat",
   "completed_at",
   "log"
  ],
@@ -39,7 +41,14 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Queued\nRunning\nDone\nFailed"
+   "options": "Queued\nRunning\nDone\nPartial\nFailed",
+   "description": "Partial = stopped early (time budget, memory guard, rate limit) but real products were saved — treated as a success state, not a failure, by the frontend."
+  },
+  {
+   "fieldname": "summary_line",
+   "fieldtype": "Data",
+   "label": "Summary",
+   "description": "One-line, human-actionable cause + remedy for the run's outcome."
   },
   {
    "fieldname": "method_used",
@@ -67,6 +76,12 @@
    "fieldname": "started_at",
    "fieldtype": "Datetime",
    "label": "Started At"
+  },
+  {
+   "fieldname": "last_heartbeat",
+   "fieldtype": "Datetime",
+   "label": "Last Heartbeat",
+   "description": "Updated at least every ~15s while Running. The watchdog uses staleness here (not just elapsed time) to tell a slow-but-alive run apart from a dead one."
   },
   {
    "fieldname": "completed_at",

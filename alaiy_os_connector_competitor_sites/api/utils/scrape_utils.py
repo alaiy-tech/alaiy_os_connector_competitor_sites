@@ -7,15 +7,36 @@ each page via Firecrawl's v2 scrape endpoint, and stops once a page returns
 no new products (past the last page) or the requested limit is reached.
 """
 
+import hashlib
 import time
 import uuid
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 import frappe
 import requests
 
 SCRAPE_ENDPOINT = "https://api.firecrawl.dev/v2/scrape"
 MAX_PAGES = 30  # safety cap
+
+# Query params that identify a *different* product/variant and must survive
+# canonicalisation (dropping them would merge distinct products into one row).
+_KEEP_QUERY_PARAMS = {
+    "id", "productid", "product_id", "pid", "sku", "style", "styleid",
+    "stylecode", "colorcode", "color", "colour", "itemid", "prod", "p_id",
+    "variant", "variant_id",
+}
+# Everything else in the query string is tracking/session noise and is dropped.
+
+
+def _log_error(title, message):
+    """frappe.log_error's signature is (title, message) — call sites in this
+    file used to pass them the other way round, which throws a MySQL 1406
+    (title overflow) and masks the real error. Always go through this."""
+    try:
+        frappe.log_error(title=str(title)[:100], message=message)
+    except Exception:
+        # Logging must never be the thing that crashes a scrape run.
+        frappe.logger().warning(f"_log_error failed for title={title!r}: {message!r}")
 
 _PRODUCT_SCHEMA = {
     "type": "object",
@@ -76,15 +97,64 @@ def _clean_url(url):
     return urlunparse((p.scheme, p.netloc, p.path, "", "", ""))[:140]
 
 
-def _already_in_db(urls):
-    if not urls:
-        return set()
-    placeholders = ",".join(["%s"] * len(urls))
-    rows = frappe.db.sql(
-        f"SELECT source_product_url FROM `tabScraped Product` WHERE source_product_url IN ({placeholders})",
-        urls,
+def canonical_url(url):
+    """Normalise a product URL for deduplication: lowercase host, strip
+    www./default port/fragment, drop tracking params while keeping the ones
+    that actually distinguish products/variants, sort what's left, and strip
+    a trailing slash or /index.html. This is the ONLY normalisation used for
+    both the dedup check and the save — previously they used different
+    logic (_clean_url for lookup, raw url for insert), so a URL could be
+    "new" on lookup and then collide on insert, or vice versa."""
+    if not url:
+        return ""
+    p = urlparse(url.strip())
+    host = (p.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    host = host.split(":")[0] if ":80" in host or ":443" in host else host
+
+    path = unquote(p.path or "/")
+    path = path.rstrip("/") or "/"
+    if path.lower().endswith("/index.html") or path.lower().endswith("/index.php"):
+        path = path.rsplit("/", 1)[0] or "/"
+
+    kept = sorted(
+        (k.lower(), v) for k, v in parse_qsl(p.query, keep_blank_values=True)
+        if k.lower() in _KEEP_QUERY_PARAMS
     )
-    return {r[0] for r in rows}
+    query = urlencode(kept)
+
+    scheme = (p.scheme or "https").lower()
+    base = f"{scheme}://{host}{path}"
+    return f"{base}?{query}" if query else base
+
+
+def url_hash(url):
+    """Fixed-length (64 char) dedup key, safe for a varchar(140) unique
+    column regardless of how long the real URL is."""
+    return hashlib.sha256(canonical_url(url).encode("utf-8")).hexdigest()
+
+
+def _already_in_db(urls):
+    """urls: iterable of raw product URLs (not pre-cleaned) — hashing happens
+    here so callers never have to remember which normalisation to apply."""
+    hashes = list({url_hash(u) for u in urls if u})
+    if not hashes:
+        return set()
+    found = set()
+    # Chunk the IN(...) lookup — at Deep-scraper volumes (thousands of URLs
+    # per site) a single unbounded IN() risks max_allowed_packet / a huge
+    # query plan.
+    chunk_size = 500
+    for i in range(0, len(hashes), chunk_size):
+        chunk = hashes[i : i + chunk_size]
+        placeholders = ",".join(["%s"] * len(chunk))
+        rows = frappe.db.sql(
+            f"SELECT url_hash FROM `tabScraped Product` WHERE url_hash IN ({placeholders})",
+            chunk,
+        )
+        found.update(r[0] for r in rows)
+    return found
 
 
 def _with_retry(fn, *args, max_attempts=3, **kwargs):
@@ -104,14 +174,35 @@ def _with_retry(fn, *args, max_attempts=3, **kwargs):
             last_exc = e
             break
     if last_exc:
-        frappe.log_error(f"Call failed after retries: {last_exc}", "Scraper")
+        _log_error("Scraper: call failed after retries", f"{last_exc}")
     return None
 
 
+def merge_query(url, **params):
+    """Preserve every existing query param; override/add only the given
+    keys. Pass a value of None to drop a key. This replaces the old
+    _page_url, which discarded the ENTIRE query string and replaced it with
+    just `?p=N` — almost none of the target sites use that convention
+    (they use ?page=, ?page_num=, ?start=&sz=, ?offset=, etc), so real
+    pagination silently kept re-fetching page 1."""
+    p = urlparse(url)
+    q = dict(parse_qsl(p.query, keep_blank_values=True))
+    for k, v in params.items():
+        if v is None:
+            q.pop(k, None)
+        else:
+            q[k] = str(v)
+    return urlunparse(p._replace(query=urlencode(q)))
+
+
 def _page_url(base, page):
-    parts = urlparse(base)
-    query = urlencode({"p": page})
-    return urlunparse(parts._replace(query=query))
+    """Kept for backwards compatibility with any external caller; Firecrawl
+    pagination itself now reuses whatever page-param convention the
+    configured site_url already carries (falls back to "page" if the URL
+    doesn't have a recognisable one), via merge_query()."""
+    existing = dict(parse_qsl(urlparse(base).query))
+    key = next((k for k in ("page", "p", "page_num", "pagenum") if k in existing), "page")
+    return merge_query(base, **{key: page})
 
 
 def _scrape_page(api_key, url):
@@ -179,11 +270,11 @@ def _scrape_firecrawl(site_url):
 
     urls_found = len(products)
 
-    clean_urls = [_clean_url(p["product_source_url"]) for p in products if p.get("product_source_url")]
-    existing = _already_in_db(clean_urls)
+    raw_urls = [p["product_source_url"] for p in products if p.get("product_source_url")]
+    existing = _already_in_db(raw_urls)  # now keyed by url_hash internally — same function used at save time
     new_products = [
         p for p in products
-        if p.get("product_source_url") and _clean_url(p["product_source_url"]) not in existing
+        if p.get("product_source_url") and url_hash(p["product_source_url"]) not in existing
     ]
     already_in_db = len(existing)
 
@@ -218,33 +309,75 @@ def _normalise(items):
 # Save / log / orchestration (unchanged)
 # ---------------------------------------------------------------------------
 
-def _save_products(raw_products, site_name, scrape_id):
+def _fit(value, max_len):
+    """Truncate a string to a column's max length so a single oversized
+    field (a long CDN image URL, a long description) can never raise a
+    MySQL 1406 at insert time."""
+    if value is None:
+        return value
+    value = str(value)
+    return value[:max_len] if len(value) > max_len else value
+
+
+def _save_products(raw_products, site_name, scrape_id, stats=None):
+    """Insert each product inside its own savepoint. Previously a single bad
+    row (e.g. a >140-char URL) raised inside the loop with no rollback —
+    MariaDB aborts the whole transaction at that point, so every row after
+    the bad one in the same batch silently failed too. Savepoints make one
+    bad row cost exactly one row.
+
+    Returns just `saved` (int) to preserve the existing call-site contract
+    (`saved = _save_products(...)`). Pass a dict as `stats` to also get
+    already_in_db/save_failed counted into it in place (keys "already_in_db"
+    and "save_failed", added to if already present) — used by the Deep
+    runner, which needs accurate already-in-db counts for its own reporting
+    since it saves incrementally in batches rather than via the single
+    upstream _already_in_db() check Firecrawl/Shopify do."""
     saved = 0
+    already_in_db = 0
+    save_failed = 0
+
     for item in raw_products:
         source_url = item.get("product_source_url")
         if not source_url:
             continue
-        if frappe.db.exists("Scraped Product", {"source_product_url": source_url}):
+
+        h = url_hash(source_url)
+        if frappe.db.exists("Scraped Product", {"url_hash": h}):
+            already_in_db += 1
             continue
+
+        savepoint = f"sp_{uuid.uuid4().hex[:12]}"
+        frappe.db.savepoint(savepoint)
         try:
             frappe.get_doc({
                 "doctype": "Scraped Product",
                 "id": str(uuid.uuid4()),
                 "scrape_id": scrape_id,
-                "product_name": item.get("product_name"),
-                "product_image_url": item.get("product_image_url"),
-                "source_product_url": source_url,
+                "product_name": _fit(item.get("product_name"), 140),
+                "product_image_url": item.get("product_image_url"),  # Small Text — no truncation needed
+                "source_product_url": _fit(source_url, 140),          # display copy, truncation is fine here
+                "url_hash": h,
                 "source_site": site_name,
-                "sku": item.get("sku"),
-                "categories": item.get("category"),
-                "source_price": item.get("price"),
+                "sku": _fit(item.get("sku"), 140),
+                "categories": _fit(item.get("category"), 140),
+                "source_price": _fit(item.get("price"), 140),
                 "description": item.get("description"),
                 "scraped_at": frappe.utils.now(),
             }).insert(ignore_permissions=True)
             saved += 1
+        except frappe.DuplicateEntryError:
+            frappe.db.rollback(save_point=savepoint)
+            already_in_db += 1
         except Exception as e:
-            frappe.log_error(f"Failed to save product {source_url}: {e}", "Scraper")
+            frappe.db.rollback(save_point=savepoint)
+            save_failed += 1
+            _log_error(f"Scraper: failed to save product ({site_name})", f"{source_url}: {e}")
+
     frappe.db.commit()
+    if stats is not None:
+        stats["already_in_db"] = stats.get("already_in_db", 0) + already_in_db
+        stats["save_failed"] = stats.get("save_failed", 0) + save_failed
     return saved
 
 
@@ -291,6 +424,9 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
             "Scraped Product", filters={"source_site": site_name}, pluck="source_product_url"
         ))
 
+        deep_presaved = 0  # Deep commits incrementally as it goes (crash-safety); this
+                            # is what it already saved before returning, on top of `saved` below.
+
         if scrape_method == "Shopify":
             products, already_in_db = _scrape_shopify(site_url, skip_urls=shopify_skip_urls)
             urls_found = len(products) + already_in_db
@@ -298,6 +434,20 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
         elif scrape_method == "Firecrawl":
             products, urls_found, already_in_db = _scrape_firecrawl(site_url)
             method_used = "Firecrawl"
+        elif scrape_method == "Deep":
+            from alaiy_os_connector_competitor_sites.api.utils.deep import scrape_deep
+
+            site_doc = frappe.get_doc("Competitor Site", site_name)
+            products, urls_found, already_in_db, deep_presaved = scrape_deep(
+                site_url=site_url,
+                site_name=site_name,
+                scrape_id=scrape_id,
+                log_name=log_name,
+                listing_urls=getattr(site_doc, "listing_urls", None),
+                limit=getattr(site_doc, "deep_max_products", None) or 0,
+                filter_jewelry=bool(getattr(site_doc, "filter_jewelry", 1)),
+            )
+            method_used = "Deep"
         else:
             try:
                 products, already_in_db = _scrape_shopify(site_url, skip_urls=shopify_skip_urls)
@@ -312,7 +462,7 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
                 products, urls_found, already_in_db = _scrape_firecrawl(site_url)
                 method_used = "Firecrawl"
 
-        saved = _save_products(products, site_name, scrape_id)
+        saved = deep_presaved + _save_products(products, site_name, scrape_id)
         frappe.logger().info(
             f"Scrape {scrape_id}: {saved} saved, {already_in_db} already in DB, from {site_name} via {method_used}"
         )
@@ -328,9 +478,17 @@ def _bg_scrape_site(site_name, site_url, scrape_id, log_name=None, scrape_method
 
     except FirecrawlCreditsError:
         msg = "Out of Firecrawl credits — top up at firecrawl.dev/pricing"
-        frappe.log_error(msg, "Scraper")
+        _log_error("Scraper: Firecrawl credits exhausted", msg)
         _update_log(log_name, status="Failed", log=msg, completed_at=frappe.utils.now_datetime())
     except Exception as e:
+        # RQ's own job timeout raises rq.timeouts.JobTimeoutException, which is a
+        # plain Exception subclass — catch it by name (rather than importing rq,
+        # an optional dependency at import time) so a Deep run that runs out of
+        # its RQ-level timeout still ends as a clean status instead of vanishing.
+        if type(e).__name__ == "JobTimeoutException":
+            msg = "Ran out of time — partial results (if any) were saved as we went. Run again to continue."
+            _update_log(log_name, status="Partial", log=msg, completed_at=frappe.utils.now_datetime())
+            return
         msg = _friendly_error(e)
-        frappe.log_error(f"Scrape failed for {site_name}: {e}", "Scraper")
+        _log_error(f"Scraper: scrape failed for {site_name}", str(e))
         _update_log(log_name, status="Failed", log=msg, completed_at=frappe.utils.now_datetime())

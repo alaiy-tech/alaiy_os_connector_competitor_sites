@@ -10,11 +10,14 @@
   "product_name",
   "product_image_url",
   "source_product_url",
+  "url_hash",
   "source_site",
   "source_site_url",
   "sku",
   "categories",
   "source_price",
+  "price_amount",
+  "price_currency",
   "description",
   "scraped_at",
   "review_status",
@@ -41,14 +44,23 @@
   },
   {
    "fieldname": "product_image_url",
-   "fieldtype": "Data",
-   "label": "Product Image URL"
+   "fieldtype": "Small Text",
+   "label": "Product Image URL",
+   "description": "Widened from Data (140 chars) — real CDN URLs (Contentful, Shopify transforms) routinely exceed that and were being silently truncated / failing to save."
   },
   {
    "fieldname": "source_product_url",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Source Product URL",
-   "unique": 1
+   "description": "Display/clickable copy of the URL. No longer the dedup key or unique — see url_hash."
+  },
+  {
+   "fieldname": "url_hash",
+   "fieldtype": "Data",
+   "label": "URL Hash",
+   "unique": 1,
+   "length": 64,
+   "description": "sha256 of the canonicalised product URL. The only dedup key — fixed-length so it's safe under a unique index regardless of how long the real URL is."
   },
   {
    "fieldname": "source_site",
@@ -75,7 +87,19 @@
    "fieldname": "source_price",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Source Price"
+   "label": "Source Price",
+   "description": "Raw scraped price string, unmodified — always kept even if parsing into price_amount fails."
+  },
+  {
+   "fieldname": "price_amount",
+   "fieldtype": "Float",
+   "label": "Price Amount"
+  },
+  {
+   "fieldname": "price_currency",
+   "fieldtype": "Data",
+   "label": "Price Currency",
+   "length": 8
   },
   {
    "fieldname": "description",

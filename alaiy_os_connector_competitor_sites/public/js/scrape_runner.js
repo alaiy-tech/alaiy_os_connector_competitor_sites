@@ -206,11 +206,11 @@
 		if (!card) return;
 		const sub = card.querySelector(".sb-sr-card-sub");
 		const badge = card.querySelector(".sb-sr-card-badge");
-		const { status, products_saved = 0, already_in_db = 0, urls_found = 0, log, elapsed_seconds = 0 } = info;
+		const { status, products_saved = 0, already_in_db = 0, urls_found = 0, log, elapsed_seconds = 0, summary_line = "" } = info;
 
 		if (status === "Failed") {
 			// Show the friendly error message directly on the card
-			const errorText = log || "Unknown error";
+			const errorText = summary_line || log || "Unknown error";
 			const lower = errorText.toLowerCase();
 			let badgeText = "Failed";
 			if (lower.includes("credit")) badgeText = "No Credits";
@@ -219,6 +219,15 @@
 			sub.innerHTML = `<span class="sb-sr-card-error">${_esc(errorText)}</span>`;
 			badge.textContent = badgeText;
 			badge.className = "sb-sr-card-badge sb-sr-badge-error";
+
+		} else if (status === "Partial") {
+			// Stopped early (time budget, memory guard, rate limit) but real
+			// products were saved — treat as a success state, not a failure.
+			sub.innerHTML = summary_line
+				? `<span class="sb-sr-card-partial">${_esc(summary_line)}</span>`
+				: `${products_saved} product${products_saved !== 1 ? "s" : ""} saved (stopped early — run again to continue)`;
+			badge.textContent = "Partial";
+			badge.className = "sb-sr-card-badge sb-sr-badge-done";
 
 		} else if (status === "Done") {
 			if (products_saved === 0 && already_in_db === 0 && urls_found === 0) {
@@ -321,8 +330,11 @@ ${site_cards}`;
 		const sites = Object.keys(log_names);
 		const elapsed = Date.now() - (startedAt || Date.now());
 
-		// Hard timeout: 10 min per site, minimum 10 min
-		const timeoutMs = Math.max(600_000, sites.length * 600_000);
+		// Hard timeout: 10 min per site, minimum 10 min. Raised to accommodate the
+		// Deep method's 25-min soft budget (35-min RQ hard timeout) — Deep also
+		// serialises on the `long` queue, so a batch that includes Deep sites can
+		// legitimately take a while with later sites queued behind the first.
+		const timeoutMs = Math.max(2_200_000, sites.length * 2_200_000);
 		if (elapsed > timeoutMs) {
 			_clearState();
 			_stopTips(root);
@@ -354,7 +366,7 @@ ${site_cards}`;
 
 				const allDone = sites.every((s) => {
 					const st = results[s]?.status;
-					return st === "Done" || st === "Failed";
+					return st === "Done" || st === "Failed" || st === "Partial";
 				});
 
 				if (allDone) {

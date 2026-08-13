@@ -164,23 +164,13 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"stellar_brands.tasks.all"
-# 	],
-# 	"daily": [
-# 		"stellar_brands.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"stellar_brands.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"stellar_brands.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"stellar_brands.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"cron": {
+		"*/5 * * * *": [
+			"alaiy_os_connector_competitor_sites.tasks.reap_stale_scrapes"
+		]
+	}
+}
 
 # Testing
 # -------

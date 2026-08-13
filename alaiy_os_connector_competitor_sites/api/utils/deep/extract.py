@@ -30,7 +30,6 @@ from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree
 
 from alaiy_os_connector_competitor_sites.api.utils.deep import api_signatures
-from alaiy_os_connector_competitor_sites.api.utils.shopify_scraper import _scrape_shopify
 
 _JSON_LD_RE = re.compile(
     r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -41,6 +40,11 @@ _JSON_LD_RE = re.compile(
 def try_products_json(site_url, skip_urls=None, filter_jewelry=True, categories=None):
     """Tier 0. Returns (rows, already_skipped) same shape as _scrape_shopify,
     or ([], 0) if this doesn't look like a Shopify store at all."""
+    # Deferred import: shopify_scraper imports deep.api_signatures at its own
+    # top level, so a top-level import here creates a circular import
+    # (shopify_scraper -> deep.__init__ -> deep.runner -> deep.extract ->
+    # shopify_scraper, still mid-init) -- confirmed live on stellar.
+    from alaiy_os_connector_competitor_sites.api.utils.shopify_scraper import _scrape_shopify
     try:
         rows, skipped = _scrape_shopify(
             site_url, skip_urls=skip_urls or set(), filter_jewelry=filter_jewelry, categories=categories)

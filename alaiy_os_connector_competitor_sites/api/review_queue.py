@@ -56,6 +56,11 @@ def get_review_queue(site=None, category=None, status="Pending", search=None, pa
 @frappe.whitelist()
 def set_review_status(name, status):
     """Set review_status on a single Scraped Product. Reusable by any connector."""
+    # Scraped Product grants write to System Manager only, but db.set_value
+    # bypasses DocType permissions entirely -- so without this check any
+    # logged-in user could overwrite anyone's review decision. Check what the
+    # doctype already says rather than inventing a second rule here.
+    frappe.has_permission("Scraped Product", "write", throw=True)
     if status not in ("Pending", "Kept", "Skipped"):
         frappe.throw("Invalid status. Must be Pending, Kept, or Skipped.")
     frappe.db.set_value("Scraped Product", name, "review_status", status)
@@ -66,6 +71,9 @@ def set_review_status(name, status):
 @frappe.whitelist()
 def save_notes(name, notes):
     """Save buyer/team notes on a Scraped Product."""
+    # Same reasoning as set_review_status: db.set_value skips the doctype's own
+    # permission rows, so the check has to be explicit here.
+    frappe.has_permission("Scraped Product", "write", throw=True)
     frappe.db.set_value("Scraped Product", name, "notes", notes)
     frappe.db.commit()
     return {"success": True}

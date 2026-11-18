@@ -11,4 +11,22 @@ connector_meta = {
     "sync_items_method": None,
     "is_enabled": 0,
     "connection_status": "untested",
+    "health": [
+        {
+            # Scrapes run on demand, so there is no interval and a run is never overdue.
+            "key": "scrape",
+            "label": "Site scrape",
+            "direction": "pull",
+            "log_doctype": "Scrape Log",
+            "fields": {
+                "processed": "urls_found",
+                "changed": "products_saved",
+                "error": "summary_line",
+            },
+            # A partial run saved products before it stopped.
+            "status_map": {"partial": "success"},
+            "scheduled": False,
+            "expects_rows": False,
+        },
+    ],
 }
